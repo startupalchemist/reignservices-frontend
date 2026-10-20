@@ -21,6 +21,7 @@ The existing live production app remains on its prior image until manual promoti
 Set OPENROUTER_API_KEY outside Git, OPENROUTER_MODEL=openrouter/free, AI_DAILY_REQUEST_LIMIT=40, PUBLIC_BASE_URL to the environment's HTTPS origin.
 Only openrouter/free or an explicit :free model is accepted; the wrapper rejects any other requested model. There is no paid fallback.
 OpenRouter free availability/latency and account quotas are external limits. The public advisor degrades to a consultation CTA on errors; staff generation reports failure instead of pretending a mutation or article succeeded.
+Long-form generation has a three-minute request timeout; interactive chat keeps its shorter timeout. Pin a tested free model for consistent generation behavior.
 Provider documentation: https://openrouter.ai/docs/guides/routing/routers/free-router and https://openrouter.ai/docs/api_reference/limits
 A missing key does not break normal CMS, proposals, portal, or lead intake.
 

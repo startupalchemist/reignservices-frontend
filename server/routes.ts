@@ -525,7 +525,7 @@ Respond in this exact JSON format:
         ],
         response_format: { type: "json_object" },
         max_completion_tokens: 4096,
-      });
+      }, { timeout: 180000 });
 
       const raw = response.choices[0]?.message?.content || "{}";
       const article = generatedArticle.parse(JSON.parse(raw));
@@ -553,9 +553,9 @@ Respond in this exact JSON format:
       await storage.updateAiJob(job.id, { output: raw, status: "completed" });
       res.json({ post, job: {...job,status:"completed",output:raw} });
     } catch (error: unknown) {
-      const msg = error instanceof Error ? error.message : String(error);
-      if(jobId) await storage.updateAiJob(jobId,{status:"failed",output:JSON.stringify({error:"Inference failed or returned invalid article"})});
-      console.error("AI write failed");
+      const kind = error instanceof z.ZodError ? "invalid_article" : error instanceof SyntaxError ? "invalid_json" : error instanceof Error ? error.name : "inference_error";
+      if(jobId) await storage.updateAiJob(jobId,{status:"failed",output:JSON.stringify({error:"Inference failed or returned invalid article",kind})});
+      console.error("AI write failed", {kind});
       res.status(503).json({ message: "Article inference is unavailable or returned an invalid article. Try again later." });
     }
   }
@@ -662,7 +662,7 @@ Respond in JSON format:
             messages: [{ role: "user", content: researchPrompt }],
             response_format: { type: "json_object" },
             max_completion_tokens: 4096,
-          });
+          }, { timeout: 180000 });
 
           const researchRaw = researchResponse.choices[0]?.message?.content || "{}";
           let research;
@@ -757,7 +757,7 @@ Respond in JSON format:
             messages: [{ role: "user", content: articlePrompt }],
             response_format: { type: "json_object" },
             max_completion_tokens: 8192,
-          });
+          }, { timeout: 180000 });
 
           const articleRaw = articleResponse.choices[0]?.message?.content || "{}";
           const article = generatedArticle.parse(JSON.parse(articleRaw));
@@ -892,7 +892,7 @@ Respond in JSON format:
         messages: [{ role: "user", content: prompt }],
         response_format: { type: "json_object" },
         max_completion_tokens: 2048,
-      });
+      }, { timeout: 180000 });
 
       const raw = response.choices[0]?.message?.content || "{}";
       let result;
@@ -1625,7 +1625,7 @@ Generate only the requested fields. Respond in this exact JSON format:
         ],
         response_format: { type: "json_object" },
         max_completion_tokens: 1024,
-      });
+      }, { timeout: 180000 });
 
       const raw = response.choices[0]?.message?.content || "{}";
       let result: { description?: string; price?: string; keyDetails?: string[] };
