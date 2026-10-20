@@ -1,4 +1,4 @@
-import type { Express } from "express";
+import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { insertLeadSchema, insertWebhookSchema, leadStatuses, webhookEvents } from "@shared/schema";
@@ -58,10 +58,15 @@ async function fireWebhooks(event: string, payload: Record<string, any>) {
   }
 }
 
-const openai = new OpenAI({
-  apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
-  baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
-});
+let openai: OpenAI | undefined;
+function getOpenAI(): OpenAI {
+  const apiKey = process.env.AI_INTEGRATIONS_OPENAI_API_KEY || process.env.OPENAI_API_KEY;
+  if (!apiKey) throw new Error("AI provider is not configured");
+  return openai ??= new OpenAI({
+    apiKey,
+    baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL || process.env.OPENAI_BASE_URL,
+  });
+}
 
 async function sendSentimentSurvey(lead: { id: number; name: string; email: string }) {
   try {
@@ -119,6 +124,13 @@ export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
+
+  app.use("/api/ai", (req, res, next) => {
+    if (req.method === "POST" && !process.env.AI_INTEGRATIONS_OPENAI_API_KEY && !process.env.OPENAI_API_KEY) {
+      return res.status(503).json({ message: "AI features are awaiting provider configuration" });
+    }
+    next();
+  });
 
   // ─── Auth Routes ───────────────────────────────────────────────
 
@@ -260,7 +272,7 @@ export async function registerRoutes(
 
   app.get("/api/leads/:id", authMiddleware, requireRole("root", "admin"), async (req, res) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(String(req.params.id), 10);
       const lead = await storage.getLead(id);
       if (!lead) {
         return res.status(404).json({ message: "Lead not found" });
@@ -273,7 +285,7 @@ export async function registerRoutes(
 
   app.patch("/api/leads/:id", authMiddleware, requireRole("root", "admin"), async (req, res) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(String(req.params.id), 10);
       const updates: Record<string, any> = {};
 
       if (req.body.status) {
@@ -381,7 +393,7 @@ export async function registerRoutes(
 
   app.patch("/api/posts/:id", authMiddleware, requireRole("root", "admin", "editor"), async (req, res) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(String(req.params.id), 10);
       const updates: Record<string, any> = {};
       const fields = ["title", "content", "excerpt", "tags", "seoTitle", "seoDescription", "seoKeywords", "status", "featuredImage"];
       for (const f of fields) {
@@ -428,7 +440,7 @@ export async function registerRoutes(
 
   app.delete("/api/posts/:id", authMiddleware, requireRole("root", "admin"), async (req, res) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(String(req.params.id), 10);
       await storage.deletePost(id);
       res.json({ message: "Post deleted" });
     } catch {
@@ -482,7 +494,7 @@ Respond in this exact JSON format:
   "seoDescription": "Meta description"
 }`;
 
-      const response = await openai.chat.completions.create({
+      const response = await getOpenAI().chat.completions.create({
         model: "gpt-5.2",
         messages: [
           { role: "system", content: systemPrompt },
@@ -556,7 +568,7 @@ Respond in this exact JSON format:
 
   app.get("/api/topics/:id", authMiddleware, requireRole("root", "admin", "editor"), async (req, res) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(String(req.params.id), 10);
       const topic = await storage.getTopicById(id);
       if (!topic) return res.status(404).json({ message: "Topic not found" });
       res.json(topic);
@@ -630,7 +642,7 @@ Respond in JSON format:
   ]
 }`;
 
-          const researchResponse = await openai.chat.completions.create({
+          const researchResponse = await getOpenAI().chat.completions.create({
             model: "gpt-5.2",
             messages: [{ role: "user", content: researchPrompt }],
             response_format: { type: "json_object" },
@@ -679,7 +691,7 @@ Respond in JSON format:
 
   app.post("/api/topics/:id/generate", authMiddleware, requireRole("root", "admin", "editor"), async (req, res) => {
     try {
-      const topicId = parseInt(req.params.id);
+      const topicId = parseInt(String(req.params.id), 10);
       const topic = await storage.getTopicById(topicId);
       if (!topic) return res.status(404).json({ message: "Topic not found" });
       if (topic.status === "generated" || topic.status === "generating") {
@@ -729,7 +741,7 @@ Respond in JSON format:
   "seoKeywords": ["keyword1", "keyword2", "keyword3", "keyword4", "keyword5"]
 }`;
 
-          const articleResponse = await openai.chat.completions.create({
+          const articleResponse = await getOpenAI().chat.completions.create({
             model: "gpt-5.2",
             messages: [{ role: "user", content: articlePrompt }],
             response_format: { type: "json_object" },
@@ -780,7 +792,7 @@ Respond in JSON format:
 
   app.patch("/api/topics/:id/archive", authMiddleware, requireRole("root", "admin", "editor"), async (req, res) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(String(req.params.id), 10);
       const topic = await storage.updateTopic(id, { status: "archived" });
       if (!topic) return res.status(404).json({ message: "Topic not found" });
       res.json(topic);
@@ -802,7 +814,7 @@ Respond in JSON format:
 
   app.post("/api/posts/:id/publish", authMiddleware, requireRole("root", "admin", "editor"), async (req, res) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(String(req.params.id), 10);
       const post = await storage.getPostById(id);
       if (!post) return res.status(404).json({ message: "Post not found" });
 
@@ -827,7 +839,7 @@ Respond in JSON:
 }`;
 
             try {
-              const seoResponse = await openai.chat.completions.create({
+              const seoResponse = await getOpenAI().chat.completions.create({
                 model: "gpt-5.2",
                 messages: [{ role: "user", content: seoPrompt }],
                 response_format: { type: "json_object" },
@@ -936,7 +948,7 @@ ${post.excerpt ? `<p style="color:#B3B3B8;font-size:16px;line-height:1.6;margin-
 
   app.post("/api/posts/:id/read", async (req, res) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(String(req.params.id), 10);
       await storage.incrementPostReadCount(id);
       res.json({ success: true });
     } catch {
@@ -946,7 +958,7 @@ ${post.excerpt ? `<p style="color:#B3B3B8;font-size:16px;line-height:1.6;margin-
 
   app.post("/api/posts/:id/share", async (req, res) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(String(req.params.id), 10);
       await storage.incrementPostShareCount(id);
       res.json({ success: true });
     } catch {
@@ -990,7 +1002,7 @@ Respond in JSON format:
   ]
 }`;
 
-      const response = await openai.chat.completions.create({
+      const response = await getOpenAI().chat.completions.create({
         model: "gpt-5.2",
         messages: [{ role: "user", content: prompt }],
         response_format: { type: "json_object" },
@@ -1127,7 +1139,7 @@ Respond in JSON format:
 
   app.delete("/api/subscribers/:id", authMiddleware, requireRole("root", "admin"), async (req, res) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(String(req.params.id), 10);
       await storage.deleteSubscriber(id);
       res.json({ message: "Subscriber deleted" });
     } catch {
@@ -1174,7 +1186,7 @@ Respond in JSON format:
 
   app.post("/api/newsletters/:id/send", authMiddleware, requireRole("root", "admin"), async (req, res) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(String(req.params.id), 10);
       const newsletter = await storage.getNewsletterById(id);
       if (!newsletter) {
         return res.status(404).json({ message: "Newsletter not found" });
@@ -1251,7 +1263,7 @@ Respond in JSON format:
 
   app.patch("/api/webhooks/:id", authMiddleware, requireRole("root", "admin"), async (req, res) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(String(req.params.id), 10);
       const updates: Record<string, any> = {};
       if (req.body.name !== undefined) updates.name = req.body.name;
       if (req.body.url !== undefined) updates.url = req.body.url;
@@ -1269,7 +1281,7 @@ Respond in JSON format:
 
   app.delete("/api/webhooks/:id", authMiddleware, requireRole("root", "admin"), async (req, res) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(String(req.params.id), 10);
       await storage.deleteWebhook(id);
       res.json({ message: "Webhook deleted" });
     } catch {
@@ -1279,7 +1291,7 @@ Respond in JSON format:
 
   app.post("/api/webhooks/:id/test", authMiddleware, requireRole("root", "admin"), async (req, res) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(String(req.params.id), 10);
       const hook = await storage.getWebhookById(id);
       if (!hook) return res.status(404).json({ message: "Webhook not found" });
 
@@ -1512,7 +1524,7 @@ Respond in JSON format:
 
   app.get("/api/settings/:key", authMiddleware, requireRole("root", "admin"), async (req, res) => {
     try {
-      const val = await storage.getSetting(req.params.key);
+      const val = await storage.getSetting(String(req.params.key));
       res.json({ key: req.params.key, value: val ?? null });
     } catch {
       res.status(500).json({ message: "Failed to fetch setting" });
@@ -1525,7 +1537,7 @@ Respond in JSON format:
       if (typeof value !== "string") {
         return res.status(400).json({ message: "Value must be a string" });
       }
-      await storage.setSetting(req.params.key, value);
+      await storage.setSetting(String(req.params.key), value);
       res.json({ key: req.params.key, value });
     } catch {
       res.status(500).json({ message: "Failed to update setting" });
@@ -1570,7 +1582,7 @@ Respond in JSON format:
         storage.getSetting("seo_pages"),
         storage.getSetting("seo_keywords"),
       ]);
-      const parseSafe = (raw: string | null) => { try { return raw ? JSON.parse(raw) : null; } catch { return null; } };
+      const parseSafe = (raw: string | null | undefined) => { try { return raw ? JSON.parse(raw) : null; } catch { return null; } };
       res.json({
         global: parseSafe(globalRaw),
         pages: parseSafe(pagesRaw),
@@ -1654,7 +1666,7 @@ Respond in JSON format:
 
   app.patch("/api/services/:id", authMiddleware, requireRole("root", "admin"), async (req, res) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(String(req.params.id), 10);
       if (Number.isNaN(id)) {
         return res.status(400).json({ message: "Invalid service ID" });
       }
@@ -1692,7 +1704,7 @@ Respond in JSON format:
 
   app.delete("/api/services/:id", authMiddleware, requireRole("root", "admin"), async (req, res) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(String(req.params.id), 10);
       if (Number.isNaN(id)) {
         return res.status(400).json({ message: "Invalid service ID" });
       }
@@ -1736,7 +1748,7 @@ Generate only the requested fields. Respond in this exact JSON format:
   ${generateKeyDetails ? `"keyDetails": ["Feature bullet 1", "Feature bullet 2", "Feature bullet 3", "Feature bullet 4", "Feature bullet 5"]` : ""}
 }`;
 
-      const response = await openai.chat.completions.create({
+      const response = await getOpenAI().chat.completions.create({
         model: "gpt-5.2",
         messages: [
           { role: "system", content: systemPrompt },
@@ -1814,7 +1826,7 @@ Generate only the requested fields. Respond in this exact JSON format:
 
   app.patch("/api/gallery/sections/:id", authMiddleware, requireRole("root", "admin"), async (req, res) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(String(req.params.id), 10);
       if (isNaN(id)) return res.status(400).json({ message: "Invalid id" });
       const updates: Record<string, any> = {};
       if (req.body.name !== undefined) updates.name = req.body.name;
@@ -1830,7 +1842,7 @@ Generate only the requested fields. Respond in this exact JSON format:
 
   app.delete("/api/gallery/sections/:id", authMiddleware, requireRole("root", "admin"), async (req, res) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(String(req.params.id), 10);
       if (isNaN(id)) return res.status(400).json({ message: "Invalid id" });
       await storage.deleteGallerySection(id);
       res.json({ message: "Section deleted" });
@@ -1863,7 +1875,7 @@ Generate only the requested fields. Respond in this exact JSON format:
 
   app.patch("/api/gallery/items/:id", authMiddleware, requireRole("root", "admin"), async (req, res) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(String(req.params.id), 10);
       if (isNaN(id)) return res.status(400).json({ message: "Invalid id" });
       const updates: Record<string, any> = {};
       if (req.body.src !== undefined) updates.src = req.body.src;
@@ -1882,7 +1894,7 @@ Generate only the requested fields. Respond in this exact JSON format:
 
   app.delete("/api/gallery/items/:id", authMiddleware, requireRole("root", "admin"), async (req, res) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(String(req.params.id), 10);
       if (isNaN(id)) return res.status(400).json({ message: "Invalid id" });
       await storage.deleteGalleryItem(id);
       res.json({ message: "Item deleted" });
