@@ -5,6 +5,7 @@ import { serveStatic } from "./static";
 import { createServer } from "http";
 import { seedRootUser } from "./auth";
 import { storage } from "./storage";
+import { pool } from "./db";
 
 const app = express();
 const httpServer = createServer(app);
@@ -40,21 +41,10 @@ export function log(message: string, source = "express") {
 app.use((req, res, next) => {
   const start = Date.now();
   const path = req.path;
-  let capturedJsonResponse: Record<string, any> | undefined = undefined;
-
-  const originalResJson = res.json;
-  res.json = function (bodyJson, ...args) {
-    capturedJsonResponse = bodyJson;
-    return originalResJson.apply(res, [bodyJson, ...args]);
-  };
-
   res.on("finish", () => {
     const duration = Date.now() - start;
     if (path.startsWith("/api")) {
       let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
-      if (capturedJsonResponse) {
-        logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
-      }
 
       log(logLine);
     }
@@ -62,38 +52,6 @@ app.use((req, res, next) => {
 
   next();
 });
-
-async function runOneTimePDRCleanup(): Promise<void> {
-  try {
-    // v2 supersedes v1: no date filter, deletes ALL published/queued legacy posts
-    const flag = await storage.getSetting("pdr_cleanup_v2");
-    if (flag === "done") return;
-
-    const allPosts = await storage.getPosts();
-    const legacyPosts = allPosts.filter((p) => p.status === "published" || p.status === "queued");
-    const removedPostIds = new Set(legacyPosts.map((p) => p.id));
-    let deletedPosts = 0;
-    for (const post of legacyPosts) {
-      await storage.deletePost(post.id);
-      deletedPosts++;
-    }
-
-    // Hard-delete topics linked to removed posts
-    const allTopics = await storage.getTopics();
-    let deletedTopics = 0;
-    for (const topic of allTopics) {
-      if (topic.postId && removedPostIds.has(topic.postId)) {
-        await storage.deleteTopic(topic.id);
-        deletedTopics++;
-      }
-    }
-
-    await storage.setSetting("pdr_cleanup_v2", "done");
-    log(`[startup cleanup v2] Removed ${deletedPosts} legacy published/queued posts and ${deletedTopics} associated topics; ${allPosts.length - legacyPosts.length} draft posts preserved`);
-  } catch (err) {
-    log(`[startup cleanup] Failed: ${err}`);
-  }
-}
 
 type SeedItem = { src: string; alt: string; badge?: string; displayOrder: number };
 type SeedSection = { name: string; displayOrder: number; items: SeedItem[] };
@@ -346,9 +304,14 @@ async function seedServices(): Promise<void> {
 
 (async () => {
   await seedRootUser();
-  await runOneTimePDRCleanup();
   await seedGallery();
   await seedServices();
+  app.get("/healthz", async (_req, res) => {
+    try {
+      await pool.query("select 1");
+      res.json({ status: "ok", service: "reign-services" });
+    } catch { res.status(503).json({ status: "unavailable" }); }
+  });
   await registerRoutes(httpServer, app);
 
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
@@ -361,7 +324,7 @@ async function seedServices(): Promise<void> {
       return next(err);
     }
 
-    return res.status(status).json({ message });
+    return res.status(status).json({ message: status >= 500 ? "Internal Server Error" : message });
   });
 
   // importantly only setup vite in development and after
