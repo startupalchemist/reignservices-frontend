@@ -5,6 +5,7 @@ RUN npm ci --no-audit --no-fund
 COPY . .
 RUN NODE_ENV=production npm run build
 RUN npm run check
+RUN npm test
 RUN npm prune --omit=dev --no-audit --no-fund
 
 FROM node:22-bookworm-slim AS runtime

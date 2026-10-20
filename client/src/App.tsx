@@ -7,9 +7,11 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider } from "@/lib/auth";
 import Header from "@/components/header";
 import Footer from "@/components/footer";
+import SalesAgent from "@/components/reign-agent";
 import Home from "@/pages/home";
 import NotFound from "@/pages/not-found";
 
+const CustomerPortal = lazy(() => import("@/pages/customer-portal"));
 const Services = lazy(() => import("@/pages/services"));
 const About = lazy(() => import("@/pages/about"));
 const FAQ = lazy(() => import("@/pages/faq"));
@@ -46,6 +48,7 @@ function Router() {
         <Route path="/about" component={About} />
         <Route path="/faq" component={FAQ} />
         <Route path="/contact" component={Contact} />
+        <Route path="/portal" component={CustomerPortal} />
         <Route path="/admin" component={Admin} />
         <Route path="/login" component={Login} />
         <Route path="/blog" component={Blog} />
@@ -79,6 +82,7 @@ function App() {
             <Router />
           </main>
           <Footer />
+          <SalesAgent />
           <Toaster />
         </AuthProvider>
       </TooltipProvider>

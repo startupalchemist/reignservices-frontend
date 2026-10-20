@@ -1,7 +1,7 @@
 name: txl-reign
 services:
   app:
-    image: txl/reign-services:oracle-launch
+    image: ${REIGN_IMAGE:-txl/reign-services:oracle-launch}
     build: ..
     restart: unless-stopped
     env_file: /etc/txl/apps/reign-services.env
@@ -22,7 +22,7 @@ services:
       driver: json-file
       options: {max-size: 10m, max-file: "3"}
   migrate:
-    image: txl/reign-services:oracle-launch
+    image: ${REIGN_IMAGE:-txl/reign-services:oracle-launch}
     profiles: [tools]
     env_file: /etc/txl/apps/reign-services-migrate.env
     command: [node, script/migrate.cjs]

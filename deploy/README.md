@@ -31,3 +31,7 @@ The ARM64 Docker production build and npm run check passed. Main-domain Playwrig
 Database role checks confirmed the Reign runtime role can connect to its own database and cannot connect to clinical_massage or platform_control.
 
 Screenshots and temporary smoke scripts are outside the repository under /opt/txl/logs. AI and email delivery remain unconfigured.
+
+## Operations release
+
+See [PRODUCTION-TOOLS.md](PRODUCTION-TOOLS.md) for the new feature branch, OpenRouter-only configuration, isolated staging environment, verification coverage and manual promotion procedure. The prior live image is unchanged until promotion.

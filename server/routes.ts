@@ -5,7 +5,11 @@ import { insertLeadSchema, insertWebhookSchema, leadStatuses, webhookEvents } fr
 import { z } from "zod";
 import { authMiddleware, requireRole, hashPassword, verifyPassword, createSession, destroySession } from "./auth";
 import crypto from "crypto";
-import OpenAI from "openai";
+import { getInference as getOpenAI, freeModel, publicBaseUrl } from "./inference";
+import { registerOperations } from "./reign-operations";
+import { registerAgents, limiter } from "./reign-agents";
+import { contextGraph } from "./reign-context";
+import { publishPost } from "./blog-publisher";
 import { getResendClient } from "./resend";
 
 async function fireWebhooks(event: string, payload: Record<string, any>) {
@@ -58,15 +62,6 @@ async function fireWebhooks(event: string, payload: Record<string, any>) {
   }
 }
 
-let openai: OpenAI | undefined;
-function getOpenAI(): OpenAI {
-  const apiKey = process.env.AI_INTEGRATIONS_OPENAI_API_KEY || process.env.OPENAI_API_KEY;
-  if (!apiKey) throw new Error("AI provider is not configured");
-  return openai ??= new OpenAI({
-    apiKey,
-    baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL || process.env.OPENAI_BASE_URL,
-  });
-}
 
 async function sendSentimentSurvey(lead: { id: number; name: string; email: string }) {
   try {
@@ -77,11 +72,7 @@ async function sendSentimentSurvey(lead: { id: number; name: string; email: stri
     if (alreadySent) return;
 
     const token = crypto.randomUUID();
-    const baseUrl = process.env.REPLIT_DEV_DOMAIN
-      ? `https://${process.env.REPLIT_DEV_DOMAIN}`
-      : process.env.REPLIT_DEPLOYMENT_URL
-      ? `https://${process.env.REPLIT_DEPLOYMENT_URL}`
-      : "http://localhost:5000";
+    const baseUrl = publicBaseUrl();
     const rateUrl = `${baseUrl}/rate/${token}?leadId=${lead.id}`;
 
     const { client, fromEmail } = await getResendClient();
@@ -112,6 +103,13 @@ async function sendSentimentSurvey(lead: { id: number; name: string; email: stri
   }
 }
 
+const generatedArticle = z.object({
+  title:z.string().trim().min(1).max(200),content:z.string().trim().min(100).max(100000),
+  excerpt:z.string().max(2000).optional(),tags:z.array(z.string().max(100)).max(20).optional(),
+  seoTitle:z.string().max(200).optional(),seoDescription:z.string().max(500).optional(),
+  seoKeywords:z.array(z.string().max(100)).max(30).optional(),
+});
+
 function slugify(text: string): string {
   return text
     .toLowerCase()
@@ -126,18 +124,22 @@ export async function registerRoutes(
 ): Promise<Server> {
 
   app.use("/api/ai", (req, res, next) => {
-    if (req.method === "POST" && !process.env.AI_INTEGRATIONS_OPENAI_API_KEY && !process.env.OPENAI_API_KEY) {
+    if (req.method === "POST" && !process.env.OPENROUTER_API_KEY) {
       return res.status(503).json({ message: "AI features are awaiting provider configuration" });
     }
     next();
   });
 
+  registerOperations(app);
+  registerAgents(app);
+
   // ─── Auth Routes ───────────────────────────────────────────────
 
-  app.post("/api/auth/login", async (req, res) => {
+  app.post("/api/auth/login", limiter(10, 15 * 60000), async (req, res) => {
     try {
-      const { email, password } = req.body;
-      if (!email || !password) {
+      const { password } = req.body;
+      const email = typeof req.body.email === "string" ? req.body.email.trim().toLowerCase() : "";
+      if (!email || typeof password !== "string" || password.length > 256) {
         return res.status(400).json({ message: "Email and password required" });
       }
       const user = await storage.getUserByEmail(email);
@@ -178,7 +180,10 @@ export async function registerRoutes(
 
   app.post("/api/users", authMiddleware, requireRole("root", "admin"), async (req, res) => {
     try {
-      const { name, email, password, role } = req.body;
+      const { name, password, role } = req.body;
+      const email = z.string().email().max(254).parse(req.body.email).trim().toLowerCase();
+      if (role && !["root","admin","editor"].includes(role)) return res.status(400).json({message:"Invalid role"});
+      if (typeof password !== "string" || password.length < 8 || password.length > 256) return res.status(400).json({message:"Password must be 8–256 characters"});
       if (!name || !email || !password) {
         return res.status(400).json({ message: "Name, email, and password required" });
       }
@@ -211,6 +216,7 @@ export async function registerRoutes(
         return res.status(403).json({ message: "Only the webmaster can assign root role" });
       }
       const updates: Record<string, any> = {};
+      if (req.body.role && !["root","admin","editor"].includes(req.body.role)) return res.status(400).json({message:"Invalid role"});
       if (req.body.role) updates.role = req.body.role;
       if (req.body.name) updates.name = req.body.name;
 
@@ -339,7 +345,14 @@ export async function registerRoutes(
 
   app.get("/api/posts", async (req, res) => {
     try {
-      const status = req.query.status as string | undefined;
+      let canPreview = false;
+      const token=req.cookies?.ds_session;
+      const session=token ? await storage.getSessionByToken(token) : undefined;
+      if(session && session.expiresAt>new Date()) {
+        const user=await storage.getUserById(session.userId);
+        canPreview=!!user && ["root","admin","editor"].includes(user.role);
+      }
+      const status = canPreview ? req.query.status as string | undefined : "published";
       const allPosts = await storage.getPosts(status);
       res.json(allPosts);
     } catch {
@@ -350,10 +363,16 @@ export async function registerRoutes(
   app.get("/api/posts/:idOrSlug", async (req, res) => {
     try {
       const param = req.params.idOrSlug;
-      const id = parseInt(param);
+      const id = /^\d+$/.test(param) ? Number(param) : NaN;
       const post = isNaN(id) ? await storage.getPostBySlug(param) : await storage.getPostById(id);
       if (!post) {
         return res.status(404).json({ message: "Post not found" });
+      }
+      if(post.status!=="published") {
+        const session=req.cookies?.ds_session ? await storage.getSessionByToken(req.cookies.ds_session) : undefined;
+        const user=session && session.expiresAt>new Date() ? await storage.getUserById(session.userId) : undefined;
+        if(!user || !["root","admin","editor"].includes(user.role)) return res.status(404).json({message:"Post not found"});
+        res.set("Cache-Control","no-store");
       }
       res.json(post);
     } catch {
@@ -364,6 +383,7 @@ export async function registerRoutes(
   app.post("/api/posts", authMiddleware, requireRole("root", "admin", "editor"), async (req, res) => {
     try {
       const { title, content, excerpt, tags, seoTitle, seoDescription, status, featuredImage } = req.body;
+      if (status && !["draft","queued","published"].includes(status)) return res.status(400).json({message:"Invalid post status"});
       if (!title) {
         return res.status(400).json({ message: "Title is required" });
       }
@@ -380,12 +400,13 @@ export async function registerRoutes(
         tags: tags || [],
         seoTitle: seoTitle || null,
         seoDescription: seoDescription || null,
-        status: status || "draft",
+        status: status === "published" ? "draft" : status || "draft",
         featuredImage: featuredImage || null,
         publishedAt: status === "published" ? new Date() : null,
         authorId: req.user!.id,
       });
-      res.status(201).json(post);
+      const result = status === "published" ? await publishPost(post.id,p=>fireWebhooks("post.published",{id:p.id,title:p.title,slug:p.slug,publishedAt:p.publishedAt})) : post;
+      res.status(201).json(result);
     } catch {
       res.status(500).json({ message: "Failed to create post" });
     }
@@ -395,6 +416,7 @@ export async function registerRoutes(
     try {
       const id = parseInt(String(req.params.id), 10);
       const updates: Record<string, any> = {};
+      if(req.body.status && !["draft","queued","published"].includes(req.body.status)) return res.status(400).json({message:"Invalid post status"});
       const fields = ["title", "content", "excerpt", "tags", "seoTitle", "seoDescription", "seoKeywords", "status", "featuredImage"];
       for (const f of fields) {
         if (req.body[f] !== undefined) updates[f] = req.body[f];
@@ -412,11 +434,13 @@ export async function registerRoutes(
           updates.slug = updates.slug + "-" + Date.now().toString(36);
         }
       }
+      const publishing=updates.status==="published";
+      if(publishing) delete updates.status;
       const post = await storage.updatePost(id, updates);
       if (!post) {
         return res.status(404).json({ message: "Post not found" });
       }
-      res.json(post);
+      res.json(publishing ? await publishPost(id,p=>fireWebhooks("post.published",{id:p.id,title:p.title,slug:p.slug,publishedAt:p.publishedAt})) : post);
     } catch {
       res.status(500).json({ message: "Failed to update post" });
     }
@@ -451,6 +475,7 @@ export async function registerRoutes(
   // ─── AI Article Generation (single topic) ──────────────────────
 
   async function handleWriteArticle(req: Request, res: Response): Promise<void> {
+    let jobId: number | undefined;
     try {
       const { topic, keywords, tone } = req.body;
       if (!topic) {
@@ -458,15 +483,10 @@ export async function registerRoutes(
         return;
       }
 
-      const blogServicesRaw = await storage.getSetting("blog_services");
-      const blogServices: { title: string; description: string }[] = (() => {
-        try { return blogServicesRaw ? JSON.parse(blogServicesRaw) : []; } catch { return []; }
-      })();
-      const servicesContext = blogServices.length > 0
-        ? blogServices.map((s) => s.title + (s.description ? `: ${s.description}` : "")).join("; ")
-        : "custom turf design & installation, foundation repair, interior remodeling, outdoor remodeling, bespoke outdoor living spaces, turf & pavers";
+      const servicesContext = JSON.stringify((await contextGraph()).services);
 
       const job = await storage.createAiJob({ type: "article", input: JSON.stringify({ topic, keywords, tone }) });
+      jobId=job.id;
 
       const systemPrompt = `You are an expert renovation content writer for Reign Services, DFW's premier interior and exterior renovation contractor. Write authoritative, professional blog articles about the following active services: ${servicesContext}.
 
@@ -495,7 +515,7 @@ Respond in this exact JSON format:
 }`;
 
       const response = await getOpenAI().chat.completions.create({
-        model: "gpt-5.2",
+        model: freeModel(),
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: userPrompt },
@@ -505,14 +525,8 @@ Respond in this exact JSON format:
       });
 
       const raw = response.choices[0]?.message?.content || "{}";
-      let article: { title?: string; content?: string; excerpt?: string; tags?: string[]; seoTitle?: string; seoDescription?: string; seoKeywords?: string[] };
-      try {
-        article = JSON.parse(raw);
-      } catch {
-        article = { title: topic, content: raw, excerpt: "", tags: [], seoTitle: "", seoDescription: "" };
-      }
+      const article = generatedArticle.parse(JSON.parse(raw));
 
-      await storage.updateAiJob(job.id, { output: raw, status: "completed" });
 
       const slug = slugify(article.title || topic);
       const existingSlug = await storage.getPostBySlug(slug);
@@ -533,11 +547,13 @@ Respond in this exact JSON format:
         authorId: req.user!.id,
       });
 
-      res.json({ post, job });
+      await storage.updateAiJob(job.id, { output: raw, status: "completed" });
+      res.json({ post, job: {...job,status:"completed",output:raw} });
     } catch (error: unknown) {
       const msg = error instanceof Error ? error.message : String(error);
-      console.error("AI write error:", msg);
-      res.status(500).json({ message: "Failed to generate article", error: msg });
+      if(jobId) await storage.updateAiJob(jobId,{status:"failed",output:JSON.stringify({error:"Inference failed or returned invalid article"})});
+      console.error("AI write failed");
+      res.status(503).json({ message: "Article inference is unavailable or returned an invalid article. Try again later." });
     }
   }
 
@@ -588,11 +604,7 @@ Respond in this exact JSON format:
 
       (async () => {
         try {
-          const blogServicesRaw = await storage.getSetting("blog_services");
-          const blogServices: { title: string; description: string }[] = (() => { try { return blogServicesRaw ? JSON.parse(blogServicesRaw) : []; } catch { return []; } })();
-          const activeServices = blogServices.length > 0
-            ? blogServices.map((s) => s.title + (s.description ? `: ${s.description}` : "")).join("; ")
-            : "Custom Turf Design & Install; Foundation Repair; Interior Remodeling; Outdoor Remodeling; Bespoke Outdoor Living Spaces; Turf & Pavers";
+          const activeServices = JSON.stringify((await contextGraph()).services);
 
           const researchPrompt = `You are an expert SEO strategist and content marketing researcher for Reign Services, DFW's premier interior and exterior renovation contractor in Dallas-Fort Worth, Texas.
 
@@ -601,7 +613,7 @@ ${activeServices}
 
 First, review these active services thoroughly. Your research and topic suggestions must be directly relevant to these services only.
 
-Conduct thorough competitive and market research for the home renovation and outdoor living industry in DFW. Analyze:
+Suggest editorial hypotheses for the home renovation and outdoor living industry in DFW. You do not have live search data. Do not claim observed rankings, verified search volumes, or sources you did not retrieve. Label all volume/competition estimates as unverified. Consider:
 1. What topics competitors are ranking for across these specific services
 2. High-volume, low-competition keywords tied to these services in the DFW market
 3. Seasonal search trends relevant to these services (outdoor projects, interior renovations)
@@ -623,7 +635,7 @@ For each topic provide:
 - estimatedSearchVolume: "high" | "medium" | "low"
 - competitionLevel: "high" | "medium" | "low"
 - leadPotential: brief explanation of how this drives leads
-- reasoning: why this topic was chosen, what search data supports it
+- reasoning: why this topic was chosen; explain that live search validation is still needed
 
 Respond in JSON format:
 {
@@ -643,7 +655,7 @@ Respond in JSON format:
 }`;
 
           const researchResponse = await getOpenAI().chat.completions.create({
-            model: "gpt-5.2",
+            model: freeModel(),
             messages: [{ role: "user", content: researchPrompt }],
             response_format: { type: "json_object" },
             max_completion_tokens: 4096,
@@ -703,11 +715,7 @@ Respond in JSON format:
 
       (async () => {
         try {
-          const blogServicesRaw = await storage.getSetting("blog_services");
-          const blogServices: { title: string; description: string }[] = (() => { try { return blogServicesRaw ? JSON.parse(blogServicesRaw) : []; } catch { return []; } })();
-          const activeServices = blogServices.length > 0
-            ? blogServices.map((s) => s.title + (s.description ? `: ${s.description}` : "")).join("; ")
-            : "Custom Turf Design & Install; Foundation Repair; Interior Remodeling; Outdoor Remodeling; Bespoke Outdoor Living Spaces; Turf & Pavers";
+          const activeServices = JSON.stringify((await contextGraph()).services);
 
           const articlePrompt = `You are an expert renovation content writer for Reign Services, DFW's premier interior and exterior renovation contractor in Dallas, TX.
 
@@ -742,19 +750,14 @@ Respond in JSON format:
 }`;
 
           const articleResponse = await getOpenAI().chat.completions.create({
-            model: "gpt-5.2",
+            model: freeModel(),
             messages: [{ role: "user", content: articlePrompt }],
             response_format: { type: "json_object" },
             max_completion_tokens: 8192,
           });
 
           const articleRaw = articleResponse.choices[0]?.message?.content || "{}";
-          let article;
-          try {
-            article = JSON.parse(articleRaw);
-          } catch {
-            article = { title: topic.title, content: articleRaw, excerpt: "", tags: [], seoTitle: "", seoDescription: "", seoKeywords: [] };
-          }
+          const article = generatedArticle.parse(JSON.parse(articleRaw));
 
           let slug = slugify(article.title || topic.title);
           const existingSlug = await storage.getPostBySlug(slug);
@@ -814,133 +817,12 @@ Respond in JSON format:
 
   app.post("/api/posts/:id/publish", authMiddleware, requireRole("root", "admin", "editor"), async (req, res) => {
     try {
-      const id = parseInt(String(req.params.id), 10);
-      const post = await storage.getPostById(id);
-      if (!post) return res.status(404).json({ message: "Post not found" });
-
-      const updated = await storage.updatePost(id, { status: "published", publishedAt: new Date() });
-      res.json(updated);
-      fireWebhooks("post.published", { id: post.id, title: post.title, slug: post.slug, excerpt: post.excerpt, tags: post.tags, publishedAt: new Date().toISOString() });
-
-      (async () => {
-        try {
-          if (!post.seoTitle || !post.seoDescription || !(post.seoKeywords && post.seoKeywords.length > 0)) {
-            const seoPrompt = `You are an SEO specialist. Generate optimized SEO metadata for this blog article.
-
-Title: ${post.title}
-Excerpt: ${post.excerpt || ""}
-Tags: ${(post.tags || []).join(", ")}
-
-Respond in JSON:
-{
-  "seoTitle": "SEO title (60 chars max)",
-  "seoDescription": "Meta description (155 chars max)",
-  "seoKeywords": ["keyword1", "keyword2", "keyword3", "keyword4", "keyword5"]
-}`;
-
-            try {
-              const seoResponse = await getOpenAI().chat.completions.create({
-                model: "gpt-5.2",
-                messages: [{ role: "user", content: seoPrompt }],
-                response_format: { type: "json_object" },
-                max_completion_tokens: 512,
-              });
-
-              const seoRaw = seoResponse.choices[0]?.message?.content || "{}";
-              let seoData;
-              try { seoData = JSON.parse(seoRaw); } catch { seoData = {}; }
-
-              const seoUpdates: Record<string, any> = {};
-              if (!post.seoTitle && seoData.seoTitle) seoUpdates.seoTitle = seoData.seoTitle;
-              if (!post.seoDescription && seoData.seoDescription) seoUpdates.seoDescription = seoData.seoDescription;
-              if ((!post.seoKeywords || post.seoKeywords.length === 0) && seoData.seoKeywords) seoUpdates.seoKeywords = seoData.seoKeywords;
-
-              if (Object.keys(seoUpdates).length > 0) {
-                await storage.updatePost(id, seoUpdates);
-              }
-            } catch (e: any) {
-              console.error("SEO agent error:", e?.message);
-            }
-          }
-
-          const baseUrl = process.env.REPLIT_DEPLOYMENT_URL
-            ? `https://${process.env.REPLIT_DEPLOYMENT_URL}`
-            : process.env.REPLIT_DEV_DOMAIN
-              ? `https://${process.env.REPLIT_DEV_DOMAIN}`
-              : "";
-
-          const backlinkPlatforms = ["Reddit", "LinkedIn", "Twitter", "Medium", "Hacker News"];
-          for (const platform of backlinkPlatforms) {
-            try {
-              const shortCode = crypto.randomBytes(4).toString("hex");
-              const utmSource = platform.toLowerCase().replace(/[^a-z0-9]+/g, "-");
-              const utmCampaign = post.slug;
-              const articleUrl = `${baseUrl}/blog/${post.slug}?utm_source=${utmSource}&utm_medium=referral&utm_campaign=${utmCampaign}`;
-
-              await storage.createBacklink({
-                postId: id,
-                platform,
-                url: articleUrl,
-                utmSource,
-                utmMedium: "referral",
-                utmCampaign,
-                shortCode,
-              });
-            } catch (e: any) {
-              console.error(`Backlink creation error for ${platform}:`, e?.message);
-            }
-          }
-
-          try {
-            const articleLink = `${baseUrl}/blog/${post.slug}`;
-            const nlSubject = post.title;
-            const nlHtml = `<div style="font-family:Manrope,sans-serif;background:#0B0B0D;color:#F5F5F7;padding:40px 20px;">
-<h1 style="font-size:24px;margin-bottom:16px;">${post.title}</h1>
-${post.excerpt ? `<p style="color:#B3B3B8;font-size:16px;line-height:1.6;margin-bottom:24px;">${post.excerpt}</p>` : ""}
-<a href="${articleLink}" style="display:inline-block;background:#5D3FD3;color:white;padding:12px 32px;text-decoration:none;font-size:14px;text-transform:uppercase;letter-spacing:0.1em;font-weight:600;">Read Full Article</a>
-<p style="color:#B3B3B8;font-size:12px;margin-top:40px;">Reign Services - DFW's Premier Interior/Exterior Renovations Experts</p>
-</div>`;
-
-            const newsletter = await storage.createNewsletter({ subject: nlSubject, htmlContent: nlHtml });
-
-            const activeSubscribers = await storage.getSubscribers("active");
-            if (activeSubscribers.length > 0) {
-              let sent = 0;
-              try {
-                const { client, fromEmail } = await getResendClient();
-                for (const sub of activeSubscribers) {
-                  try {
-                    await client.emails.send({
-                      from: fromEmail,
-                      to: sub.email,
-                      subject: nlSubject,
-                      html: nlHtml +
-                        `<p style="font-size:12px;color:#999;margin-top:40px;"><a href="${baseUrl}/api/unsubscribe/${sub.unsubscribeToken}">Unsubscribe</a></p>`,
-                    });
-                    sent++;
-                  } catch (e) {
-                    console.error(`Failed to send to ${sub.email}:`, e);
-                  }
-                }
-              } catch (e) {
-                console.error("Resend client error:", e);
-              }
-
-              await storage.updateNewsletter(newsletter.id, {
-                status: "sent",
-                sentAt: new Date(),
-                recipientCount: sent,
-              });
-            }
-          } catch (e: any) {
-            console.error("Auto-newsletter error:", e?.message);
-          }
-        } catch (e: any) {
-          console.error("Publisher agent error:", e?.message);
-        }
-      })();
+      const id=z.coerce.number().int().positive().parse(req.params.id);
+      const post=await publishPost(id,p=>fireWebhooks("post.published",{id:p.id,title:p.title,slug:p.slug,publishedAt:p.publishedAt}));
+      if(!post) return res.status(404).json({message:"Post not found"});
+      res.json(post);
     } catch {
-      res.status(500).json({ message: "Failed to publish post" });
+      res.status(500).json({message:"Publishing failed; no partial distribution was committed"});
     }
   });
 
@@ -1003,7 +885,7 @@ Respond in JSON format:
 }`;
 
       const response = await getOpenAI().chat.completions.create({
-        model: "gpt-5.2",
+        model: freeModel(),
         messages: [{ role: "user", content: prompt }],
         response_format: { type: "json_object" },
         max_completion_tokens: 2048,
@@ -1036,11 +918,7 @@ Respond in JSON format:
       const utmSource = platform.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
       const utmCampaign = post.slug;
 
-      const baseUrl = process.env.REPLIT_DEPLOYMENT_URL
-        ? `https://${process.env.REPLIT_DEPLOYMENT_URL}`
-        : process.env.REPLIT_DEV_DOMAIN
-          ? `https://${process.env.REPLIT_DEV_DOMAIN}`
-          : "";
+      const baseUrl = publicBaseUrl();
 
       const articleUrl = `${baseUrl}/blog/${post.slug}?utm_source=${utmSource}&utm_medium=referral&utm_campaign=${utmCampaign}`;
 
@@ -1649,6 +1527,7 @@ Respond in JSON format:
       const maxOrder = all.length > 0 ? Math.max(...all.map(s => s.displayOrder)) : -1;
       const service = await storage.createService({
         title: title.trim(),
+        slug: slugify(title) + "-" + crypto.randomBytes(3).toString("hex"),
         badge: "",
         header: "",
         description: "",
@@ -1749,7 +1628,7 @@ Generate only the requested fields. Respond in this exact JSON format:
 }`;
 
       const response = await getOpenAI().chat.completions.create({
-        model: "gpt-5.2",
+        model: freeModel(),
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: userPrompt },

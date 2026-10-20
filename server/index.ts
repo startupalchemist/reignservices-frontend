@@ -8,6 +8,15 @@ import { storage } from "./storage";
 import { pool } from "./db";
 
 const app = express();
+app.set("trust proxy", 1);
+app.use("/api", (req, res, next) => {
+  res.set("Cache-Control","no-store");
+  const origin=req.get("origin");
+  if (!["GET","HEAD","OPTIONS"].includes(req.method) && origin && origin !== `${req.protocol}://${req.get("host")}`) {
+    return res.status(403).json({message:"Cross-origin writes are not allowed"});
+  }
+  next();
+});
 const httpServer = createServer(app);
 
 declare module "http" {
