@@ -1634,7 +1634,7 @@ function NewsletterTab({
                   )}
                 </div>
               </div>
-              {nl.status !== "sent" && (
+              {nl.status === "draft" && (
                 <Button
                   variant="ghost"
                   onClick={() => sendNewsletter.mutate(nl.id)}

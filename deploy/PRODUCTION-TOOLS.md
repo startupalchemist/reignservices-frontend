@@ -13,7 +13,7 @@ The existing live production app remains on its prior image until manual promoti
 - Approved per-service rate cards, deterministic cents/tax/minimum pricing, frozen proposal snapshots, draft updates, staff issue/withdraw, and customer acceptance/decline with optimistic version checks.
 - Property area/perimeter calculations from supplied survey/scaled-drawing boundary coordinates. Geometry is validated and staff verification is required before using a saved measurement in a proposal. This is not address-only aerial measurement; no imagery or parcel provider is configured.
 - Private customer links expire after 30 days. Only token hashes are stored. The token travels in the URL fragment, is removed immediately, then used in an HttpOnly portal cookie. Reissuing a link revokes previous links and sessions. Customer queries are scoped by lead ID and omit drafts.
-- Anonymous blog access is restricted to published posts. Staff can preview drafts. Publication metadata, tracking links, and a newsletter draft commit together. Newsletter sending is reviewed separately.
+- Anonymous blog access is restricted to published posts. Staff can preview drafts. Publication metadata, tracking links, and a newsletter draft commit together. Newsletter sending is reviewed separately. Provider rejections are not counted as successes; concurrent/repeated sends are blocked. Partial or interrupted sends require provider-log review instead of an automatic resend.
 - Staff mutation events are recorded in reign_audit. No credentials are stored in Git.
 
 ## Inference configuration

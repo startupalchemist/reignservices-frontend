@@ -150,3 +150,15 @@ test("Shared daily free-inference budget fails closed when exhausted",async()=>{
  await reserveInference();await reserveInference();await assert.rejects(reserveInference(),/budget reached/);
  delete process.env.AI_DAILY_REQUEST_LIMIT;
 });
+
+test("Mail configuration failures do not count as sent; attempted newsletters cannot be resent",async()=>{
+ delete process.env.RESEND_API_KEY;delete process.env.RESEND_FROM_EMAIL;delete process.env.REPL_IDENTITY;delete process.env.WEB_REPL_RENEWAL;
+ await pool.query("INSERT INTO subscribers(email,unsubscribe_token) VALUES('mail-test@example.invalid','test-unsubscribe')");
+ const r=await call("/api/newsletters",{subject:"Integration newsletter",htmlContent:"<p>Test only</p>"},admin);
+ assert.equal(r.status,201);
+ assert.equal((await call("/api/newsletters/"+r.data.id+"/send",{},admin)).status,503);
+ let row=(await pool.query("SELECT status,recipient_count FROM newsletters WHERE id=$1",[r.data.id])).rows[0];
+ assert.equal(row.status,"draft");assert.equal(row.recipient_count,0);
+ await pool.query("UPDATE newsletters SET status='review_required' WHERE id=$1",[r.data.id]);
+ assert.equal((await call("/api/newsletters/"+r.data.id+"/send",{},admin)).status,409);
+});

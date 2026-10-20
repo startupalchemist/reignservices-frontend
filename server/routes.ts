@@ -10,6 +10,8 @@ import { registerOperations } from "./reign-operations";
 import { registerAgents, limiter } from "./reign-agents";
 import { contextGraph } from "./reign-context";
 import { publishPost } from "./blog-publisher";
+import { pool } from "./db";
+import { requireEmailAccepted } from "./mail-result";
 import { getResendClient } from "./resend";
 
 async function fireWebhooks(event: string, payload: Record<string, any>) {
@@ -76,7 +78,7 @@ async function sendSentimentSurvey(lead: { id: number; name: string; email: stri
     const rateUrl = `${baseUrl}/rate/${token}?leadId=${lead.id}`;
 
     const { client, fromEmail } = await getResendClient();
-    await client.emails.send({
+    const result = await client.emails.send({
       from: fromEmail,
       to: lead.email,
       subject: "How was your experience with Reign Services?",
@@ -97,6 +99,7 @@ async function sendSentimentSurvey(lead: { id: number; name: string; email: stri
       `,
     });
 
+    requireEmailAccepted(result);
     await storage.markLeadSentimentSent(lead.id);
   } catch (e: any) {
     console.error("Sentiment survey email error:", e?.message);
@@ -1069,44 +1072,31 @@ Respond in JSON format:
       if (!newsletter) {
         return res.status(404).json({ message: "Newsletter not found" });
       }
-      if (newsletter.status === "sent") {
-        return res.status(400).json({ message: "Newsletter already sent" });
+      if (newsletter.status !== "draft") return res.status(409).json({message:"This newsletter was already attempted. Review provider delivery logs before creating another send."});
+      const activeSubscribers=await storage.getSubscribers("active");
+      if(!activeSubscribers.length) return res.status(400).json({message:"No active subscribers"});
+      let mail;
+      try {mail=await getResendClient();}catch{return res.status(503).json({message:"Email service is awaiting configuration"});}
+      const claimed=await pool.query("UPDATE newsletters SET status='sending' WHERE id=$1 AND status='draft' RETURNING id",[id]);
+      if(!claimed.rowCount) return res.status(409).json({message:"This newsletter is already being sent or requires review"});
+      let sent=0;
+      for(const sub of activeSubscribers) {
+        try {
+          const result=await mail.client.emails.send({
+            from:mail.fromEmail,to:sub.email,subject:newsletter.subject,
+            html:newsletter.htmlContent+
+              `<p><a href="${publicBaseUrl()}/api/unsubscribe/${encodeURIComponent(sub.unsubscribeToken)}">Unsubscribe</a></p>`,
+          });
+          requireEmailAccepted(result);sent++;
+          await storage.updateNewsletter(id,{recipientCount:sent});
+        } catch {console.error("Newsletter provider acceptance failed");}
       }
-
-      const activeSubscribers = await storage.getSubscribers("active");
-      if (activeSubscribers.length === 0) {
-        return res.status(400).json({ message: "No active subscribers" });
-      }
-
-      let sent = 0;
-      try {
-        const { client, fromEmail } = await getResendClient();
-        for (const sub of activeSubscribers) {
-          try {
-            await client.emails.send({
-              from: fromEmail,
-              to: sub.email,
-              subject: newsletter.subject,
-              html: newsletter.htmlContent +
-                `<p style="font-size:12px;color:#999;margin-top:40px;"><a href="${process.env.REPLIT_DEV_DOMAIN ? 'https://' + process.env.REPLIT_DEV_DOMAIN : ''}/api/unsubscribe/${sub.unsubscribeToken}">Unsubscribe</a></p>`,
-            });
-            sent++;
-          } catch (e) {
-            console.error(`Failed to send to ${sub.email}:`, e);
-          }
-        }
-      } catch (e) {
-        console.error("Resend client error:", e);
-        return res.status(500).json({ message: "Email service unavailable" });
-      }
-
-      await storage.updateNewsletter(id, {
-        status: "sent",
-        sentAt: new Date(),
-        recipientCount: sent,
+      const complete=sent===activeSubscribers.length;
+      await storage.updateNewsletter(id,{status:complete?"sent":"review_required",sentAt:complete?new Date():null,recipientCount:sent});
+      res.status(complete?200:503).json({
+        message:complete?`Newsletter accepted for ${sent} subscribers`:`Only ${sent} of ${activeSubscribers.length} messages were accepted. Review provider logs before retrying.`,
+        sent,status:complete?"sent":"review_required",
       });
-
-      res.json({ message: `Newsletter sent to ${sent} subscribers`, sent });
     } catch {
       res.status(500).json({ message: "Failed to send newsletter" });
     }

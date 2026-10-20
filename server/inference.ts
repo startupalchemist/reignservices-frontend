@@ -8,7 +8,7 @@ export function freeModel() {
 }
 let client: OpenAI | undefined;
 export function getInference() {
-  if (!process.env.OPENROUTER_API_KEY) throw new Error("OpenRouter is not configured");
+  if (!process.env.OPENROUTER_API_KEY) throw Object.assign(new Error("Staff AI is awaiting OpenRouter configuration"),{status:503});
   freeModel();
   if (!client) {
   client = new OpenAI({

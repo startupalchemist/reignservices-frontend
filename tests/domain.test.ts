@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import {requireEmailAccepted} from "../server/mail-result";
 import {measurePolygon,calculateProposal,proposalInput,measurementInput} from "../server/operations-domain";
 const rates=[{serviceId:1,unit:"sq ft" as const,unitPriceCents:825,minimumCents:15000}];
 const services=[{id:1,title:"Turf",isActive:true}];
@@ -26,4 +27,10 @@ test("Bids reject missing rates, inactive services, negative quantities and inje
   assert.throws(()=>calculateProposal(input,rates,[{...services[0],isActive:false}]));
   assert.throws(()=>proposalInput.parse({...input,lines:[{serviceId:1,quantity:-1}]}));
   assert.throws(()=>proposalInput.parse({...input,totalCents:1}));
+});
+
+test("Email acceptance rejects provider errors and missing message IDs",()=>{
+ assert.throws(()=>requireEmailAccepted({data:null,error:{message:"Rejected"}}));
+ assert.throws(()=>requireEmailAccepted({data:null,error:null}));
+ assert.equal(requireEmailAccepted({data:{id:"test-message"},error:null}),"test-message");
 });
