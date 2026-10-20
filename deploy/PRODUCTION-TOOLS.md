@@ -21,7 +21,7 @@ The existing live production app remains on its prior image until manual promoti
 Set OPENROUTER_API_KEY outside Git, OPENROUTER_MODEL=openrouter/free, AI_DAILY_REQUEST_LIMIT=40, PUBLIC_BASE_URL to the environment's HTTPS origin.
 Only openrouter/free or an explicit :free model is accepted; the wrapper rejects any other requested model. There is no paid fallback. A busy pinned free model receives at most one retry through openrouter/free; both attempts count against the app budget.
 OpenRouter free availability/latency and account quotas are external limits. The public advisor degrades to a consultation CTA on errors; staff generation reports failure instead of pretending a mutation or article succeeded.
-Long-form generation has a three-minute request timeout; interactive chat keeps its shorter timeout. Pin a tested free model for consistent generation behavior.
+Long-form generation has a three-minute request timeout; interactive chat keeps its shorter timeout. Staging uses the live-tested cohere/north-mini-code:free model, with a bounded openrouter/free fallback. Model availability can change.
 Provider documentation: https://openrouter.ai/docs/guides/routing/routers/free-router and https://openrouter.ai/docs/api_reference/limits
 A missing key does not break normal CMS, proposals, portal, or lead intake.
 
@@ -47,9 +47,20 @@ Seed test accounts and synthetic data only. Remove ROOT_PASSWORD from the app en
 7. Roll back the app image if checks fail. Migration 0001 is additive; do not drop operational tables or customer records to roll back an app image.
 8. Keep main/dev/staging changes in reviewed branches. No production auto-promotion is configured or implied.
 
-## Remaining external validation
+## Validation on isolated staging
 
-- Use an active OpenRouter key from Bitwarden and verify real authenticated sales, staff actions, and long-form generation. Free provider availability and account quotas remain external dependencies.
-- RESEND_API_KEY/RESEND_FROM_EMAIL and sender-domain verification are required for mail. Delivery to a real customer mailing list is not a smoke test.
+- Both requested staff accounts log in with the expected roles; production account creation was verified separately.
+- TypeScript, nine domain tests and eleven PostgreSQL/API integration tests pass. GitHub CI also builds the full Docker image.
+- Desktop (1440 × 1000) and mobile (390 × 844): staff login, approved test rate, boundary calculation/verification, draft bid, issue, private customer link, and customer acceptance. No horizontal overflow or browser page errors in these checked journeys.
+- Real free inference: public consultation advisor, a staff-created inactive service, confirmed one-time execution, immediate CMS context refresh, and a valid long-form draft article. Staff function calls also generated a draft bid with the expected test total.
+- Full real blog pipeline passed: research returned five topics, the writer generated a queued article, anonymous preview was denied, publication made it readable and created one newsletter draft, and repeated publication created no duplicate draft. The synthetic public post was removed. Browser rendering and unsafe-link blocking also passed. No subscriber mailing was triggered.
+- Domain-restricted staging mail credentials are stored outside Git. One message was sent exclusively to the provider's delivery simulator; the provider reported delivered. Repeat sending was rejected. No real customer recipients were contacted.
+- Synthetic records and a separate staging database were used. Real business pricing and customer imagery were not inferred.
+
+## Remaining release gates
+
+- Configure the verified OpenRouter credentials on production during manual promotion. Free provider availability and account quotas remain external dependencies; there is no production availability guarantee from a free inference route.
+- Production mail needs its own domain-restricted sending key and sender environment. The verified sender domain and staging simulator test do not prove inbox placement for every customer.
+- Staff must supply real approved service rates and applicable tax settings before customer bids are issued.
 - Address-only automatic property measurements need an imagery/parcel provider, account access, accuracy review, and integration.
 - These tests establish the checked journeys, not a guarantee that every input/browser/integration is defect-free.
