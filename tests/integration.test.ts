@@ -10,8 +10,8 @@ import {storage} from "../server/storage";
 import {hashPassword} from "../server/auth";
 import {contextGraph,reserveInference} from "../server/reign-context";
 import {registerAgents} from "../server/reign-agents";
-let mockReply:string|undefined;let modelRequest:any;
-const mockInference=(()=>({chat:{completions:{create:async(input:any)=>{modelRequest=input;if(!mockReply) throw new Error("Provider unavailable");return {choices:[{message:{content:mockReply}}]};}}}})) as any;
+let mockReply:string|undefined;let mockToolCalls:any[]|undefined;let modelRequest:any;
+const mockInference=(()=>({chat:{completions:{create:async(input:any)=>{modelRequest=input;if(!mockReply && !mockToolCalls) throw new Error("Provider unavailable");return {choices:[{message:{content:mockReply,tool_calls:mockToolCalls}}]};}}}})) as any;
 let server:Server,base:string,admin:string,editor:string,adminId:number,leadId:number,otherLead:number,serviceId:number,proposalId:number,portal:string,accessToken:string,measurement:number;
 async function call(path:string,body?:unknown,cookie="",method=body===undefined?"GET":"POST"){
  const r=await fetch(base+path,{method,headers:{...(cookie?{cookie}:{}),...(body===undefined?{}:{"Content-Type":"application/json"})},body:body===undefined?undefined:JSON.stringify(body)});
@@ -132,18 +132,20 @@ test("Sales agent retains consultation fallback when inference is unconfigured",
 
 test("Staff agent uses fresh CMS/tool facts and returns validated pending changes rather than executing them",async()=>{
  const before=await storage.getServiceById(serviceId);
- mockReply=JSON.stringify({reply:"Prepared a service update for your review.",actions:[{type:"service.update",id:serviceId,data:{description:"Updated by confirmed assistant"}}]});
+ mockReply="Already updated.";
+ mockToolCalls=[{type:"function",function:{name:"update_service",arguments:JSON.stringify({id:serviceId,data:{description:"Updated by confirmed assistant"}})}}];
  const result=await call("/api/operations/agent",{messages:[{role:"user",content:"Update the turf description"}]},admin);
  assert.equal(result.status,200);assert.equal(result.data.pending.length,1);
+ assert.equal(modelRequest.tools.length,8);assert.match(result.data.reply,/review/);assert.ok(!result.data.reply.includes("Already updated"));
  assert.equal((await storage.getServiceById(serviceId))?.description,before?.description);
  assert.ok(modelRequest.messages[0].content.includes("Customer One"));
  assert.ok(modelRequest.messages[0].content.includes("Turf"));
  const id=result.data.pending[0].id;
  assert.equal((await call("/api/operations/agent/actions/"+id+"/confirm",{},admin)).status,200);
  assert.equal((await storage.getServiceById(serviceId))?.description,"Updated by confirmed assistant");
- mockReply=JSON.stringify({reply:"Invalid action",actions:[{type:"config.set",key:"OPENROUTER_API_KEY",value:"leak"}]});
+ mockToolCalls=[{type:"function",function:{name:"set_config",arguments:JSON.stringify({key:"OPENROUTER_API_KEY",value:"leak"})}}];
  assert.equal((await call("/api/operations/agent",{messages:[{role:"user",content:"Change a secret"}]},admin)).status,400);
- mockReply=undefined;
+ mockReply=undefined;mockToolCalls=undefined;
 });
 test("Shared daily free-inference budget fails closed when exhausted",async()=>{
  process.env.AI_DAILY_REQUEST_LIMIT="2";
