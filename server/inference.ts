@@ -1,9 +1,10 @@
 import OpenAI from "openai";
+import {isFreeModel,runFreeRequest} from "./free-routing";
 import { reserveInference } from "./reign-context";
 
 export function freeModel() {
   const model = process.env.OPENROUTER_MODEL || "openrouter/free";
-  if (model !== "openrouter/free" && !model.endsWith(":free")) throw new Error("Only free inference models are allowed");
+  if (!isFreeModel(model)) throw new Error("Only free inference models are allowed");
   return model;
 }
 let client: OpenAI | undefined;
@@ -18,11 +19,9 @@ export function getInference() {
     defaultHeaders: { "HTTP-Referer": process.env.PUBLIC_BASE_URL || "https://getreignservices.com", "X-Title": "Reign Services" },
   });
   const create=client.chat.completions.create.bind(client.chat.completions);
-  client.chat.completions.create=(async (...args: any[]) => {
-    if(args[0]?.model!==freeModel()) throw new Error("Only the configured free model is allowed");
-    await reserveInference();
-    return (create as any)(...args);
-  }) as typeof client.chat.completions.create;
+  client.chat.completions.create=(async (...args: any[]) =>
+    runFreeRequest(args[0],args[1],create as any,reserveInference,freeModel())
+  ) as typeof client.chat.completions.create;
   }
   return client;
 }

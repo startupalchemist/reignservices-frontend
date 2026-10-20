@@ -2,6 +2,7 @@ import type { Express, RequestHandler } from "express";
 import { z } from "zod";
 import crypto from "node:crypto";
 import { pool } from "./db";
+import {parseModelJson} from "./model-json";
 import { contextGraph } from "./reign-context";
 import { freeModel, getInference } from "./inference";
 import { actionSchema, executeAction, handled, staff, fail, audit } from "./reign-operations";
@@ -72,7 +73,7 @@ For a proposal ask for lead ID and quantities/rates if missing. Staff can see th
 `},...messages],
     });
     let parsed:unknown;
-    try{parsed=JSON.parse(result.choices[0]?.message.content||"");}catch{fail("The model returned an invalid response. Please try again.",502);}
+    try{parsed=parseModelJson(result.choices[0]?.message.content||"");}catch{fail("The model returned an invalid response. Please try again.",502);}
     const answer=answerSchema.parse(parsed),actions=answer.actions.map(a=>actionSchema.parse(a));
     const pending=[];
     for(const action of actions) {

@@ -19,7 +19,7 @@ The existing live production app remains on its prior image until manual promoti
 ## Inference configuration
 
 Set OPENROUTER_API_KEY outside Git, OPENROUTER_MODEL=openrouter/free, AI_DAILY_REQUEST_LIMIT=40, PUBLIC_BASE_URL to the environment's HTTPS origin.
-Only openrouter/free or an explicit :free model is accepted; the wrapper rejects any other requested model. There is no paid fallback.
+Only openrouter/free or an explicit :free model is accepted; the wrapper rejects any other requested model. There is no paid fallback. A busy pinned free model receives at most one retry through openrouter/free; both attempts count against the app budget.
 OpenRouter free availability/latency and account quotas are external limits. The public advisor degrades to a consultation CTA on errors; staff generation reports failure instead of pretending a mutation or article succeeded.
 Long-form generation has a three-minute request timeout; interactive chat keeps its shorter timeout. Pin a tested free model for consistent generation behavior.
 Provider documentation: https://openrouter.ai/docs/guides/routing/routers/free-router and https://openrouter.ai/docs/api_reference/limits
@@ -49,7 +49,7 @@ Seed test accounts and synthetic data only. Remove ROOT_PASSWORD from the app en
 
 ## Remaining external validation
 
-- Bitwarden unlock is required to retrieve/configure the user's OpenRouter key. No model access should be claimed verified before a real authenticated inference succeeds.
+- Use an active OpenRouter key from Bitwarden and verify real authenticated sales, staff actions, and long-form generation. Free provider availability and account quotas remain external dependencies.
 - RESEND_API_KEY/RESEND_FROM_EMAIL and sender-domain verification are required for mail. Delivery to a real customer mailing list is not a smoke test.
 - Address-only automatic property measurements need an imagery/parcel provider, account access, accuracy review, and integration.
 - These tests establish the checked journeys, not a guarantee that every input/browser/integration is defect-free.

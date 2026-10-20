@@ -8,7 +8,7 @@ The first launch uses an isolated, initially empty reign_services database. It d
 
 Starlight Caddy terminates HTTPS and forwards through a supervised SSH tunnel to Oracle localhost:5000. Both hosts are required. Direct Oracle public ingress remains unconfigured.
 
-Production secrets: DATABASE_URL. ROOT_EMAIL/ROOT_PASSWORD seed the owner only during bootstrap; ROOT_PASSWORD was removed from the application environment afterward. Optional integrations: OPENAI_API_KEY/OPENAI_BASE_URL (or existing Replit AI variables), RESEND_API_KEY/RESEND_FROM_EMAIL. AI and mail have not been configured or end-to-end validated.
+Production secrets: DATABASE_URL. ROOT_EMAIL/ROOT_PASSWORD seed the owner only during bootstrap; ROOT_PASSWORD was removed from the application environment afterward. The operations release uses OPENROUTER_API_KEY/OPENROUTER_MODEL and AI_DAILY_REQUEST_LIMIT; legacy OpenAI/Replit inference variables are not used by the active routes. Mail uses RESEND_API_KEY/RESEND_FROM_EMAIL. Validate each provider in staging before promotion.
 
 Admin credentials are saved in Bitwarden as Reign Services - Production Admin. Bootstrap recovery copies remain in the root-only /etc/txl/apps/reign-services-owner.json file on Oracle and the root-only Starlight secrets directory. Do not commit credentials.
 

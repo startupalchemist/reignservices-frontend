@@ -11,6 +11,7 @@ import { registerAgents, limiter } from "./reign-agents";
 import { contextGraph } from "./reign-context";
 import { publishPost } from "./blog-publisher";
 import { pool } from "./db";
+import { parseModelJson } from "./model-json";
 import { requireEmailAccepted } from "./mail-result";
 import { getResendClient } from "./resend";
 
@@ -524,11 +525,11 @@ Respond in this exact JSON format:
           { role: "user", content: userPrompt },
         ],
         response_format: { type: "json_object" },
-        max_completion_tokens: 4096,
+        max_completion_tokens: 8192,
       }, { timeout: 180000 });
 
       const raw = response.choices[0]?.message?.content || "{}";
-      const article = generatedArticle.parse(JSON.parse(raw));
+      const article = generatedArticle.parse(parseModelJson(raw));
 
 
       const slug = slugify(article.title || topic);
@@ -667,7 +668,7 @@ Respond in JSON format:
           const researchRaw = researchResponse.choices[0]?.message?.content || "{}";
           let research;
           try {
-            research = JSON.parse(researchRaw);
+            research = parseModelJson(researchRaw);
           } catch {
             research = { marketInsights: "", topics: [] };
           }
@@ -760,7 +761,7 @@ Respond in JSON format:
           }, { timeout: 180000 });
 
           const articleRaw = articleResponse.choices[0]?.message?.content || "{}";
-          const article = generatedArticle.parse(JSON.parse(articleRaw));
+          const article = generatedArticle.parse(parseModelJson(articleRaw));
 
           let slug = slugify(article.title || topic.title);
           const existingSlug = await storage.getPostBySlug(slug);
@@ -897,7 +898,7 @@ Respond in JSON format:
       const raw = response.choices[0]?.message?.content || "{}";
       let result;
       try {
-        result = JSON.parse(raw);
+        result = parseModelJson(raw);
       } catch {
         result = { platforms: [] };
       }
@@ -1450,7 +1451,7 @@ Respond in JSON format:
         storage.getSetting("seo_pages"),
         storage.getSetting("seo_keywords"),
       ]);
-      const parseSafe = (raw: string | null | undefined) => { try { return raw ? JSON.parse(raw) : null; } catch { return null; } };
+      const parseSafe = (raw: string | null | undefined) => { try { return raw ? parseModelJson(raw) : null; } catch { return null; } };
       res.json({
         global: parseSafe(globalRaw),
         pages: parseSafe(pagesRaw),
@@ -1630,7 +1631,7 @@ Generate only the requested fields. Respond in this exact JSON format:
       const raw = response.choices[0]?.message?.content || "{}";
       let result: { description?: string; price?: string; keyDetails?: string[] };
       try {
-        result = JSON.parse(raw);
+        result = parseModelJson(raw);
       } catch {
         result = {};
       }

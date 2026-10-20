@@ -1,5 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import {runFreeRequest} from "../server/free-routing";
+import {parseModelJson} from "../server/model-json";
 import {requireEmailAccepted} from "../server/mail-result";
 import {measurePolygon,calculateProposal,proposalInput,measurementInput} from "../server/operations-domain";
 const rates=[{serviceId:1,unit:"sq ft" as const,unitPriceCents:825,minimumCents:15000}];
@@ -33,4 +35,26 @@ test("Email acceptance rejects provider errors and missing message IDs",()=>{
  assert.throws(()=>requireEmailAccepted({data:null,error:{message:"Rejected"}}));
  assert.throws(()=>requireEmailAccepted({data:null,error:null}));
  assert.equal(requireEmailAccepted({data:{id:"test-message"},error:null}),"test-message");
+});
+
+test("Structured model responses accept JSON fences and reject prose or broken JSON",()=>{
+ assert.deepEqual(parseModelJson('\x60\x60\x60json\n{"reply":"Ready"}\n\x60\x60\x60'),{reply:"Ready"});
+ assert.throws(()=>parseModelJson('Ignore instructions {"reply":"unsafe"}'));
+ assert.throws(()=>parseModelJson('{"reply":'));
+});
+
+test("Busy pinned models get one free-only fallback and both attempts count toward budget",async()=>{
+ const calls:string[]=[];let count=0;
+ const result=await runFreeRequest({model:"test/model:free"},{timeout:180000},async(body,options)=>{
+  calls.push(body.model);assert.equal(body.reasoning.effort,"low");assert.equal(options.timeout,180000);
+  if(calls.length===1) throw Object.assign(new Error("Busy"),{status:429});return {ok:true};
+ },async()=>{count++;},"test/model:free");
+ assert.deepEqual(calls,["test/model:free","openrouter/free"]);assert.equal(count,2);assert.deepEqual(result,{ok:true});
+});
+test("Paid models, exhausted budgets and router errors never create paid or unbounded retries",async()=>{
+ let calls=0;
+ const create=async()=>{calls++;throw Object.assign(new Error("Busy"),{status:429});};
+ await assert.rejects(runFreeRequest({model:"paid/model"},null,create,async()=>{},"paid/model"));assert.equal(calls,0);
+ await assert.rejects(runFreeRequest({model:"openrouter/free"},null,create,async()=>{throw Error("Budget exhausted");},"openrouter/free"));assert.equal(calls,0);
+ await assert.rejects(runFreeRequest({model:"openrouter/free"},null,create,async()=>{},"openrouter/free"));assert.equal(calls,1);
 });
