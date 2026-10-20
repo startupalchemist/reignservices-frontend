@@ -1,4 +1,4 @@
-import {actionSchema} from "./reign-operations";
+import {actionSchema,fail} from "./reign-operations";
 type Schema=Record<string,unknown>;
 const string={type:"string"},id={type:"integer",minimum:1};
 const object=(properties:Record<string,Schema>,required:string[])=>({type:"object",properties,required,additionalProperties:false});
@@ -25,9 +25,9 @@ export const agentTools=definitions.map(([name,description,parameters])=>({
   type:"function" as const,function:{name,description,parameters},
 }));
 export function actionFromTool(name:string,args:unknown) {
-  if(!args || typeof args!=="object" || Array.isArray(args)) throw new Error("Invalid tool arguments");
+  if(!args || typeof args!=="object" || Array.isArray(args)) fail("Invalid tool arguments",502);
   const a=args as Record<string,unknown>;
-  if("type" in a) throw new Error("Unexpected tool argument");
+  if("type" in a) fail("Unexpected tool argument",502);
   let action:unknown;
   switch(name){
     case "create_service":action={type:"service.create",data:a};break;
@@ -38,7 +38,7 @@ export function actionFromTool(name:string,args:unknown) {
     case "create_proposal":action={type:"proposal.create",data:a};break;
     case "update_proposal":action={...a,type:"proposal.update"};break;
     case "create_measurement":action={type:"measurement.create",data:a};break;
-    default:throw new Error("Unknown staff tool");
+    default:fail("Unknown staff tool",502);
   }
   return actionSchema.parse(action);
 }

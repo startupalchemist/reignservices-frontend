@@ -11,7 +11,7 @@ import { registerAgents, limiter } from "./reign-agents";
 import { contextGraph } from "./reign-context";
 import { publishPost } from "./blog-publisher";
 import { pool } from "./db";
-import { parseModelJson } from "./model-json";
+import { parseModelJson,parseResearch } from "./model-json";
 import { requireEmailAccepted } from "./mail-result";
 import { getResendClient } from "./resend";
 
@@ -666,24 +666,18 @@ Respond in JSON format:
           }, { timeout: 180000 });
 
           const researchRaw = researchResponse.choices[0]?.message?.content || "{}";
-          let research;
-          try {
-            research = parseModelJson(researchRaw);
-          } catch {
-            research = { marketInsights: "", topics: [] };
-          }
-
-          const topicsData = research.topics || [];
+          const research = parseResearch(researchRaw);
+          const topicsData = research.topics;
           for (const t of topicsData.slice(0, 5)) {
             await storage.createTopic({
               title: t.title,
               overview: t.overview || "",
               targetKeywords: t.targetKeywords || [],
               searchIntent: t.searchIntent || null,
-              estimatedSearchVolume: t.estimatedSearchVolume || null,
-              competitionLevel: t.competitionLevel || null,
-              leadPotential: t.leadPotential || null,
-              reasoning: t.reasoning || null,
+              estimatedSearchVolume: t.estimatedSearchVolume,
+              competitionLevel: t.competitionLevel,
+              leadPotential: t.leadPotential,
+              reasoning: t.reasoning,
               aiJobId: job.id,
             });
           }

@@ -145,6 +145,9 @@ test("Staff agent uses fresh CMS/tool facts and returns validated pending change
  assert.equal((await storage.getServiceById(serviceId))?.description,"Updated by confirmed assistant");
  mockToolCalls=[{type:"function",function:{name:"set_config",arguments:JSON.stringify({key:"OPENROUTER_API_KEY",value:"leak"})}}];
  assert.equal((await call("/api/operations/agent",{messages:[{role:"user",content:"Change a secret"}]},admin)).status,400);
+ mockToolCalls=[{type:"function",function:{name:"delete_service",arguments:JSON.stringify({id:serviceId,type:"config.set"})}}];
+ assert.equal((await call("/api/operations/agent",{messages:[{role:"user",content:"Delete service"}]},admin)).status,502);
+ assert.ok(await storage.getServiceById(serviceId));
  mockReply=undefined;mockToolCalls=undefined;
 });
 test("Shared daily free-inference budget fails closed when exhausted",async()=>{

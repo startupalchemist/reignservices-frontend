@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {runFreeRequest} from "../server/free-routing";
-import {parseModelJson} from "../server/model-json";
+import {parseModelJson,parseResearch} from "../server/model-json";
 import {requireEmailAccepted} from "../server/mail-result";
 import {measurePolygon,calculateProposal,proposalInput,measurementInput} from "../server/operations-domain";
 const rates=[{serviceId:1,unit:"sq ft" as const,unitPriceCents:825,minimumCents:15000}];
@@ -57,4 +57,12 @@ test("Paid models, exhausted budgets and router errors never create paid or unbo
  await assert.rejects(runFreeRequest({model:"paid/model"},null,create,async()=>{},"paid/model"));assert.equal(calls,0);
  await assert.rejects(runFreeRequest({model:"openrouter/free"},null,create,async()=>{throw Error("Budget exhausted");},"openrouter/free"));assert.equal(calls,0);
  await assert.rejects(runFreeRequest({model:"openrouter/free"},null,create,async()=>{},"openrouter/free"));assert.equal(calls,1);
+});
+
+test("Research rejects empty or malformed topic output instead of marking an empty run complete",()=>{
+ assert.throws(()=>parseResearch("{}"));
+ assert.throws(()=>parseResearch(JSON.stringify({marketInsights:"Hypotheses",topics:[]})));
+ assert.throws(()=>parseResearch(JSON.stringify({marketInsights:"Hypotheses",topics:[{title:"Turf"}]})));
+ const topic={title:"DFW Turf",overview:"Consultation planning",targetKeywords:["DFW turf"],searchIntent:"informational",estimatedSearchVolume:"low",competitionLevel:"medium",leadPotential:"Planning",reasoning:"Needs live validation"};
+ assert.equal(parseResearch(JSON.stringify({marketInsights:"Unverified hypotheses",topics:[topic]})).topics[0].title,"DFW Turf");
 });
