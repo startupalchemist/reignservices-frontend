@@ -11,7 +11,7 @@ The existing live production app remains on its prior image until manual promoti
 - Internal assistant reads the current CMS graph, approved pricing, and the most recent 50 leads, proposals, and measurements. It proposes validated changes. The same authenticated admin must confirm each action within ten minutes; stale CMS context and repeated confirmations are rejected. Issuing proposals stays an explicit staff action.
 - Live context graph is derived from the database on every request, fingerprinted and linked business → services → rates/consultation. No separate vector/graph service or stale background index is required.
 - Approved per-service rate cards, deterministic cents/tax/minimum pricing, frozen proposal snapshots, draft updates, staff issue/withdraw, and customer acceptance/decline with optimistic version checks.
-- Property area/perimeter calculations from supplied survey/scaled-drawing boundary coordinates. Geometry is validated and staff verification is required before using a saved measurement in a proposal. This is not address-only aerial measurement; no imagery or parcel provider is configured.
+- Property area/perimeter calculations from supplied survey/scaled-drawing boundary coordinates. Geometry is validated and staff verification is required before using a saved measurement in a proposal. Aerial imagery, AI markup, and branded site-study exports are now implemented separately; see SITE-PLANS.md.
 - Private customer links expire after 30 days. Only token hashes are stored. The token travels in the URL fragment, is removed immediately, then used in an HttpOnly portal cookie. Reissuing a link revokes previous links and sessions. Customer queries are scoped by lead ID and omit drafts.
 - Anonymous blog access is restricted to published posts. Staff can preview drafts. Publication metadata, tracking links, and a newsletter draft commit together. Newsletter sending is reviewed separately. Provider rejections are not counted as successes; concurrent/repeated sends are blocked. Partial or interrupted sends require provider-log review instead of an automatic resend.
 - Staff mutation events are recorded in reign_audit. No credentials are stored in Git.
@@ -50,7 +50,7 @@ Seed test accounts and synthetic data only. Remove ROOT_PASSWORD from the app en
 ## Validation on isolated staging
 
 - Both requested staff accounts log in with the expected roles; production account creation was verified separately.
-- TypeScript, nine domain tests and eleven PostgreSQL/API integration tests pass. GitHub CI also builds the full Docker image.
+- TypeScript, fourteen domain tests and sixteen PostgreSQL/API integration tests pass. GitHub CI also builds the full Docker image.
 - Desktop (1440 × 1000) and mobile (390 × 844): staff login, approved test rate, boundary calculation/verification, draft bid, issue, private customer link, and customer acceptance. No horizontal overflow or browser page errors in these checked journeys.
 - Real free inference: public consultation advisor, a staff-created inactive service, confirmed one-time execution, immediate CMS context refresh, and a valid long-form draft article. Staff function calls also generated a draft bid with the expected test total.
 - Full real blog pipeline passed: research returned five topics, the writer generated a queued article, anonymous preview was denied, publication made it readable and created one newsletter draft, and repeated publication created no duplicate draft. The synthetic public post was removed. Browser rendering and unsafe-link blocking also passed. No subscriber mailing was triggered.
@@ -62,5 +62,5 @@ Seed test accounts and synthetic data only. Remove ROOT_PASSWORD from the app en
 - Configure the verified OpenRouter credentials on production during manual promotion. Free provider availability and account quotas remain external dependencies; there is no production availability guarantee from a free inference route.
 - Production mail needs its own domain-restricted sending key and sender environment. The verified sender domain and staging simulator test do not prove inbox placement for every customer.
 - Staff must supply real approved service rates and applicable tax settings before customer bids are issued.
-- Address-only automatic property measurements need an imagery/parcel provider, account access, accuracy review, and integration.
+- Aerial studies use USGS NAIP Plus by default, with optional Mapbox support. Staff must confirm the correct map center, review outlines, and verify field dimensions before using estimates in bids. See SITE-PLANS.md for branding tiers and owner-managed entitlement state.
 - These tests establish the checked journeys, not a guarantee that every input/browser/integration is defect-free.

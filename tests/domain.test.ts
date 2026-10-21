@@ -67,7 +67,7 @@ test("Research rejects empty or malformed topic output instead of marking an emp
  assert.equal(parseResearch(JSON.stringify({marketInsights:"Unverified hypotheses",topics:[topic]})).topics[0].title,"DFW Turf");
 });
 
-import {entitlements,mapScale,mercatorBounds,measuredShapes,pngLogo,subscriptionSchema} from "../server/site-domain";
+import {entitlements,mapScale,mercatorBounds,measuredShapes,pngLogo,subscriptionSchema,renderSitePlan} from "../server/site-domain";
 test("Export entitlements fail closed for unknown tiers, unpaid statuses, expired access and missing premium expiry",()=>{
  const expiry=new Date(Date.now()+86400000).toISOString();
  assert.deepEqual(entitlements({tier:"starter",status:"active"}).modes,["platform"]);
@@ -93,4 +93,10 @@ test("Aerial markup rejects out-of-image or crossed polygons and recomputes all 
 });
 test("Logo inputs reject URLs, SVG scripts and invalid raster data",()=>{
  for(const logo of ["https://example.com/a.png","data:image/svg+xml;base64,PHN2Zz4=","data:image/png;base64,AAAA"])assert.throws(()=>pngLogo.parse(logo));
+});
+
+test("Mapbox export keeps its attribution strip above markup and tenant branding cannot remove provider credit",()=>{
+ const plan={document:{address:"Test",feetPerPixel:1,provider:"mapbox",retrievedAt:"2026-10-21",attribution:"Mapbox satellite",annotations:{summary:"",shapes:[]}},image_data:"data:image/jpeg;base64,AAAA"};
+ const svg=renderSitePlan(plan,{name:"Tenant",logo:null},null,"tenant");
+ assert.match(svg,/clip-path="url\(#markup\)"/);assert.match(svg,/height="937"/);assert.match(svg,/Mapbox satellite/);assert.ok(!svg.includes("LaunchWorks"));assert.match(svg,/do not sum their areas/);
 });

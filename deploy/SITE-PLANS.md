@@ -28,7 +28,7 @@ The website footer uses two restrained lines: LaunchWorks by Ocotillo Intelligen
 
 ## Release checks
 
-TypeScript, 13 domain tests and 16 PostgreSQL/API tests pass locally, including forged premium requests, admin privilege boundaries, subscription expiry/status transitions, tenant scoping, PNG output, attribution retention, stale updates, AI output validation, and separate measurement verification. Run CI, a native ARM64 image build, migration 0002, live imagery/vision requests, and desktop/mobile browser validation before promotion. Keep production promotion separate from staging.
+TypeScript, 14 domain tests and 16 PostgreSQL/API tests pass locally, including forged premium requests, admin privilege boundaries, subscription expiry/status transitions, tenant scoping, PNG output, attribution retention, stale updates, AI output validation, and separate measurement verification. CI and the native ARM64 source build passed, and migration 0002 was applied to isolated staging. Live USGS imagery, free vision markup (eight regions on a public Dallas test site), all three PNG/SVG branding modes, root-only entitlement controls, and canceled/expired denial passed. The original Starter entitlement was restored after testing. Desktop/mobile browser validation also exercises manual drawing, review, measurement transfer, tenant logo upload and downloads; complete its final pass after UI changes. Regions may overlap; region areas must not be summed blindly. Keep production promotion separate from staging.
 
 Primary provider references:
 - https://imagery.nationalmap.gov/arcgis/rest/services/USGSNAIPPlus/ImageServer
