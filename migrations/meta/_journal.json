@@ -15,6 +15,13 @@
       "when": 1792486800000,
       "tag": "0001_reign_operations",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1792582428661,
+      "tag": "0002_site_plans",
+      "breakpoints": true
     }
   ]
 }

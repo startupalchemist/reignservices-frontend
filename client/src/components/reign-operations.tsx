@@ -1,3 +1,4 @@
+import SitePlans from "./site-plans";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { queryClient } from "@/lib/queryClient";
@@ -47,7 +48,7 @@ export default function ReignOperations() {
         const points=boundary.trim()?JSON.parse(boundary):[[0,0],[Number(length),0],[Number(length),Number(width)],[0,Number(width)]];
         return request("/api/operations/measurements",{leadId:Number(leadId),label:"Project boundary",points,source});
       },"Measurement calculated. Verify the source and boundary before using it in a bid.");}}>
-        <h3 className="text-lg">Property boundary measurement</h3><p className="text-sm text-zinc-400">Calculate area and perimeter from a survey or scaled drawing. Address-only aerial measurement needs a separate data provider. Verify site conditions before quoting.</p>
+        <h3 className="text-lg">Property boundary measurement</h3><p className="text-sm text-zinc-400">Calculate area and perimeter from a survey or scaled drawing. Use Aerial site plans below for imagery-based estimates. Verify site conditions before quoting.</p>
         <label htmlFor="length" className="block">Rectangle length (feet)</label><Input id="length" type="number" min="0.01" step="any" value={length} onChange={e=>setLength(e.target.value)}/>
         <label htmlFor="width" className="block">Rectangle width (feet)</label><Input id="width" type="number" min="0.01" step="any" value={width} onChange={e=>setWidth(e.target.value)}/>
         <label htmlFor="boundary" className="block">Or polygon coordinates in feet</label><Textarea id="boundary" placeholder="[[0,0],[30,0],[30,20],[0,20]]" value={boundary} onChange={e=>setBoundary(e.target.value)}/>
@@ -55,6 +56,7 @@ export default function ReignOperations() {
         <Button disabled={busy||!leadId||(!boundary&&(!length||!width))}>Calculate and save</Button>
       </form>
     </div>
+    <SitePlans leadId={leadId}/>
     <section className="rounded border border-white/15 p-5 space-y-3"><h3 className="text-lg">Saved measurements</h3>
       {measurements.filter(m=>!leadId||m.lead_id===Number(leadId)).map(m=><div key={m.id} className="flex flex-wrap gap-3 justify-between border-b border-white/10 py-3"><p>#{m.id} · Lead #{m.lead_id} · {m.area_sq_ft} sq ft · {m.perimeter_ft} linear ft · {m.source} · {m.verified?"Verified":"Needs review"}</p>{!m.verified&&<Button disabled={busy} onClick={()=>{if(window.confirm("I have checked this boundary and source and verified it for estimating.")) run(()=>request("/api/operations/measurements/"+m.id+"/verify",{}),"Measurement verified.");}}>Verify measurement</Button>}</div>)}
       {!measurements.length&&<p className="text-zinc-400">No measurements yet.</p>}

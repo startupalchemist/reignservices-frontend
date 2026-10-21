@@ -6,6 +6,7 @@ import { z } from "zod";
 import { authMiddleware, requireRole, hashPassword, verifyPassword, createSession, destroySession } from "./auth";
 import crypto from "crypto";
 import { getInference as getOpenAI, freeModel, publicBaseUrl } from "./inference";
+import {registerSitePlans} from "./site-plans";
 import { registerOperations } from "./reign-operations";
 import { registerAgents, limiter } from "./reign-agents";
 import { contextGraph } from "./reign-context";
@@ -135,6 +136,7 @@ export async function registerRoutes(
   });
 
   registerOperations(app);
+  registerSitePlans(app);
   registerAgents(app);
 
   // ─── Auth Routes ───────────────────────────────────────────────

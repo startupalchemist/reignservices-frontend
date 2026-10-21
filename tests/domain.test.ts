@@ -66,3 +66,31 @@ test("Research rejects empty or malformed topic output instead of marking an emp
  const topic={title:"DFW Turf",overview:"Consultation planning",targetKeywords:["DFW turf"],searchIntent:"informational",estimatedSearchVolume:"low",competitionLevel:"medium",leadPotential:"Planning",reasoning:"Needs live validation"};
  assert.equal(parseResearch(JSON.stringify({marketInsights:"Unverified hypotheses",topics:[topic]})).topics[0].title,"DFW Turf");
 });
+
+import {entitlements,mapScale,mercatorBounds,measuredShapes,pngLogo,subscriptionSchema} from "../server/site-domain";
+test("Export entitlements fail closed for unknown tiers, unpaid statuses, expired access and missing premium expiry",()=>{
+ const expiry=new Date(Date.now()+86400000).toISOString();
+ assert.deepEqual(entitlements({tier:"starter",status:"active"}).modes,["platform"]);
+ assert.deepEqual(entitlements({tier:"pro",status:"active",currentPeriodEnd:expiry}).modes,["platform","dual"]);
+ assert.deepEqual(entitlements({tier:"white_label",status:"trialing",currentPeriodEnd:expiry}).modes,["platform","dual","tenant"]);
+ for(const status of ["canceled","past_due","paused","incomplete","unknown"])assert.equal(entitlements({tier:"white_label",status,currentPeriodEnd:expiry}).canExport,false);
+ assert.equal(entitlements({tier:"white_label",status:"active"}).active,false);
+ assert.equal(entitlements({tier:"unknown",status:"active",currentPeriodEnd:expiry}).active,false);
+ assert.equal(entitlements({tier:"pro",status:"active",currentPeriodEnd:new Date(0).toISOString()}).active,false);
+ assert.throws(()=>subscriptionSchema.parse({tier:"pro",status:"active",currentPeriodEnd:null}));
+});
+test("Aerial scale uses the 512 pixel world convention and bounds preserve the source pixel scale",()=>{
+ assert.ok(Math.abs(mapScale(0,19).metersPerPixel-.1492910709)<1e-8);
+ assert.ok(mapScale(60,19).metersPerPixel<mapScale(0,19).metersPerPixel);
+ const b=mercatorBounds(32.78,-96.8,19);
+ assert.ok(Math.abs((b[2]-b[0])/768*Math.cos(32.78*Math.PI/180)-mapScale(32.78,19).metersPerPixel)<1e-8);
+});
+test("Aerial markup rejects out-of-image or crossed polygons and recomputes all supplied measures",()=>{
+ const raw={summary:"Estimate",shapes:[{label:"Yard",kind:"turf",confidence:"medium",notes:"",points:[[0,0],[.5,0],[.5,.5],[0,.5]],areaSqFt:1,perimeterFt:1}]};
+ const value=measuredShapes(raw,1);assert.equal(value.shapes[0].areaSqFt,147456);assert.equal(measuredShapes(value,1).shapes[0].areaSqFt,147456);
+ assert.throws(()=>measuredShapes({...raw,shapes:[{...raw.shapes[0],points:[[0,0],[2,0],[1,1]]}]},1));
+ assert.throws(()=>measuredShapes({...raw,shapes:[{...raw.shapes[0],points:[[0,0],[1,1],[0,1],[1,0]]}]},1));
+});
+test("Logo inputs reject URLs, SVG scripts and invalid raster data",()=>{
+ for(const logo of ["https://example.com/a.png","data:image/svg+xml;base64,PHN2Zz4=","data:image/png;base64,AAAA"])assert.throws(()=>pngLogo.parse(logo));
+});

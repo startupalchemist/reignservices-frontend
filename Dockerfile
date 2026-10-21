@@ -9,6 +9,7 @@ RUN npm test
 RUN npm prune --omit=dev --no-audit --no-fund
 
 FROM node:22-bookworm-slim AS runtime
+RUN apt-get update && apt-get install -y --no-install-recommends fonts-dejavu-core && rm -rf /var/lib/apt/lists/*
 ENV NODE_ENV=production PORT=5000
 WORKDIR /app
 COPY --from=build --chown=node:node /app/package.json ./

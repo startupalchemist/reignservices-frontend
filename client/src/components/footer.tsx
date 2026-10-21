@@ -131,25 +131,11 @@ export default function Footer() {
             </div>
           </div>
 
-          <div className="flex items-center justify-center sm:justify-start gap-2 pt-1">
-            <img
-              src="/startup-alchemist-rocket.png"
-              alt="Startup Alchemist"
-              className="h-5 w-5 object-contain"
-              style={{ filter: "brightness(0) invert(1)", opacity: 0.35 }}
-            />
-            <p className="text-[#B3B3B8]/25 text-[10px] tracking-wide" data-testid="text-footer-attribution">
-              Site Designed &amp; Maintained by{" "}
-              <a
-                href="https://tachyonbuilt.com"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="hover:text-[#B3B3B8]/50 transition-colors"
-              >
-                TachyonBuilt
-              </a>
-              {" "}— A Startup Alchemist Venture
+          <div className="pt-1 text-center sm:text-left space-y-1" data-testid="text-footer-attribution">
+            <p className="text-[#B3B3B8]/45 text-xs tracking-wide">
+              LaunchWorks <span className="text-[#B3B3B8]/30">by Ocotillo Intelligence</span>
             </p>
+            <p className="text-[#B3B3B8]/30 text-[10px] tracking-wide">Engineered by TachyonXLabs</p>
           </div>
         </div>
       </div>

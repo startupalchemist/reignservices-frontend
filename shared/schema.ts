@@ -387,3 +387,16 @@ export const reignAgentActions = pgTable("reign_agent_actions",{
 export const reignAiBudget = pgTable("reign_ai_budget",{
   day:date("day").primaryKey(),requests:integer("requests").notNull().default(0),
 });
+
+export const reignTenantEntitlements=pgTable("reign_tenant_entitlements",{
+ tenantId:text("tenant_id").primaryKey(),tier:text("tier").notNull().default("starter"),
+ status:text("status").notNull().default("active"),currentPeriodEnd:timestamp("current_period_end",{withTimezone:true}),
+ brand:jsonb("brand").notNull().default(sql`'{"name":"Reign Services","logo":null}'::jsonb`),
+ platformLogo:text("platform_logo"),updatedAt:timestamp("updated_at",{withTimezone:true}).notNull().defaultNow(),
+});
+export const reignSitePlans=pgTable("reign_site_plans",{
+ id:serial("id").primaryKey(),tenantId:text("tenant_id").notNull(),
+ leadId:integer("lead_id").notNull().references(()=>leads.id),document:jsonb("document").notNull(),
+ imageData:text("image_data").notNull(),version:integer("version").notNull().default(1),
+ reviewedAt:timestamp("reviewed_at",{withTimezone:true}),createdAt:timestamp("created_at",{withTimezone:true}).notNull().defaultNow(),
+});
