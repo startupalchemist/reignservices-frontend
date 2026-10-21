@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { lazy, Suspense, useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
@@ -57,6 +57,7 @@ import {
   Wand2,
 } from "lucide-react";
 import { useLocation } from "wouter";
+const ReignOperations = lazy(() => import("@/components/reign-operations"));
 import TheDyno from "@/components/the-dyno";
 import type { Lead, Post, Subscriber, Newsletter, Topic, Webhook, WebhookLog, Service, GallerySection, GalleryItem } from "@shared/schema";
 import { leadStatuses, webhookEvents } from "@shared/schema";
@@ -85,7 +86,7 @@ const statusColors: Record<string, string> = {
   "Closed": "bg-gray-500/20 text-gray-400",
 };
 
-type TabKey = "dyno" | "dashboard" | "leads" | "blog" | "newsletter" | "users" | "integrations" | "seo" | "services" | "gallery";
+type TabKey = "operations" | "dyno" | "dashboard" | "leads" | "blog" | "newsletter" | "users" | "integrations" | "seo" | "services" | "gallery";
 
 export default function Admin() {
   const { user, loading: authLoading, logout } = useAuth();
@@ -116,6 +117,7 @@ export default function Admin() {
   }
 
   const tabs: { key: TabKey; label: string; icon: typeof BarChart3 }[] = [
+    ...(user.role === "root" || user.role === "admin" ? [{ key: "operations" as TabKey, label: "Operations & AI", icon: Sparkles }] : []),
     { key: "dyno", label: "The Dyno", icon: Gauge },
     { key: "dashboard", label: "Dashboard", icon: BarChart3 },
     { key: "leads", label: "Leads", icon: Users },
@@ -171,6 +173,7 @@ export default function Admin() {
           ))}
         </div>
 
+        {activeTab === "operations" && (user.role === "root" || user.role === "admin") && <Suspense fallback={<p>Loading operations…</p>}><ReignOperations /></Suspense>}
         {activeTab === "dyno" && <TheDyno />}
         {activeTab === "dashboard" && <DashboardTab />}
         {activeTab === "leads" && <LeadsTab toast={toast} />}
@@ -1114,7 +1117,7 @@ function PublisherQueueSubTab({ toast, onPreview }: { toast: any; onPreview: (po
               </div>
             </div>
             <p className="text-xs text-[#B3B3B8]/30 mt-3 italic" data-testid={`text-publish-note-${post.id}`}>
-              Publishing triggers SEO optimization, backlink creation, and newsletter delivery.
+              Publishing saves SEO metadata, tracking links, and a newsletter draft together. Send newsletters separately.
             </p>
           </div>
         ))}
@@ -1631,7 +1634,7 @@ function NewsletterTab({
                   )}
                 </div>
               </div>
-              {nl.status !== "sent" && (
+              {nl.status === "draft" && (
                 <Button
                   variant="ghost"
                   onClick={() => sendNewsletter.mutate(nl.id)}
