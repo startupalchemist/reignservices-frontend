@@ -132,10 +132,10 @@ export default function Footer() {
           </div>
 
           <div className="pt-1 text-center sm:text-left space-y-1" data-testid="text-footer-attribution">
-            <p className="text-[#B3B3B8]/45 text-xs tracking-wide">
-              LaunchWorks <span className="text-[#B3B3B8]/30">by Ocotillo Intelligence</span>
+            <p className="text-[#B3B3B8]/90 text-xs tracking-wide">
+              LaunchWorks <span className="text-[#B3B3B8]/80">by Ocotillo Intelligence</span>
             </p>
-            <p className="text-[#B3B3B8]/30 text-[10px] tracking-wide">Engineered by TachyonXLabs</p>
+            <p className="text-[#B3B3B8]/75 text-[10px] tracking-wide">Engineered by TachyonXLabs</p>
           </div>
         </div>
       </div>
