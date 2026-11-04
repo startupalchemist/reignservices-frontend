@@ -329,6 +329,19 @@ const pause = (ms) => new Promise((r) => setTimeout(r, ms));
     assert.equal(decided.status, "accepted");
     await customerCtx.close();
     result.checks.push("Private portal invitation and customer acceptance");
+    await page.getByRole("button", {name:"Add contact",exact:true}).click();
+    dialog=page.getByRole("dialog");
+    const otherName="Synthetic other contact "+stamp;
+    await dialog.getByLabel("Full name",{exact:true}).fill(otherName);
+    await dialog.getByLabel("Phone",{exact:true}).fill("555-0199");
+    await dialog.getByRole("button",{name:"Save contact",exact:true}).click();
+    await dialog.waitFor({state:"hidden"});
+    await page.getByRole("heading",{name:otherName,exact:true}).first().waitFor();
+    result.created.otherContactId=(await read(base+"/api/crm/contacts")).find(c=>c.name===otherName).id;
+    save();
+    assert.equal(await page.getByRole("textbox",{name:"Private customer portal invitation",exact:true}).count(),0);
+    result.checks.push("Private invitation state clears when switching to another contact");
+
     await nav("Overview").click();
     await page
       .getByRole("heading", { name: "Project delivery", exact: true })

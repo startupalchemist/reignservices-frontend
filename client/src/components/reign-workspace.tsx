@@ -1183,7 +1183,7 @@ function Contacts() {
         .includes(search.toLowerCase()),
   );
   if (focus && contacts.some((c: any) => c.id === focus))
-    return <ContactProfile id={focus} back={() => setFocus(null)} />;
+    return <ContactProfile key={focus} id={focus} back={() => setFocus(null)} />;
   return (
     <>
       <Head
