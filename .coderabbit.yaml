@@ -1,0 +1,4 @@
+# Automatic AI reviews disabled at the owner's request; normal CI still runs.
+reviews:
+  auto_review:
+    enabled: false

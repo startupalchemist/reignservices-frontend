@@ -35,3 +35,7 @@ Screenshots and temporary smoke scripts are outside the repository under /opt/tx
 ## Operations release
 
 See [PRODUCTION-TOOLS.md](PRODUCTION-TOOLS.md) for the new feature branch, OpenRouter-only configuration, isolated staging environment, verification coverage and manual promotion procedure. The prior live image is unchanged until promotion.
+
+## Construction CRM workspace
+
+See [CRM-WORKSPACE.md](CRM-WORKSPACE.md) for contact/deal/project tracking, employee tools, customer invitations, incoming workflows, validation and staging rollback.

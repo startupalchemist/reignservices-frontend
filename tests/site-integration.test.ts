@@ -40,7 +40,7 @@ before(async()=>{
 after(async()=>{await new Promise<void>(r=>server.close(()=>r()));await pool.end();});
 test("Imagery and branding require staff, tenant IDs cannot be supplied, tenant admins cannot upgrade subscriptions",async()=>{
  assert.equal((await call("/api/operations/site-plans",undefined,"")).status,401);
- assert.equal((await call("/api/operations/branding",undefined,editor)).status,403);
+ assert.equal((await call("/api/operations/branding",undefined,editor)).status,200);
  assert.equal((await call("/api/operations/branding/subscription",{tier:"white_label",status:"active",currentPeriodEnd:future()},admin,"PATCH")).status,403);
  assert.equal((await call("/api/operations/branding",{name:"Tenant",logo:null,tier:"white_label"},admin,"PATCH")).status,400);
  assert.equal((await call("/api/operations/site-plans",{leadId,address:"Public address",tenantId:"another"})).status,400);

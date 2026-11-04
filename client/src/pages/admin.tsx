@@ -1,3 +1,4 @@
+import ReignWorkspace from "@/components/reign-workspace";
 import { lazy, Suspense, useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
@@ -58,7 +59,7 @@ import {
 } from "lucide-react";
 import { useLocation } from "wouter";
 const ReignOperations = lazy(() => import("@/components/reign-operations"));
-import TheDyno from "@/components/the-dyno";
+
 import type { Lead, Post, Subscriber, Newsletter, Topic, Webhook, WebhookLog, Service, GallerySection, GalleryItem } from "@shared/schema";
 import { leadStatuses, webhookEvents } from "@shared/schema";
 
@@ -88,11 +89,11 @@ const statusColors: Record<string, string> = {
 
 type TabKey = "operations" | "dyno" | "dashboard" | "leads" | "blog" | "newsletter" | "users" | "integrations" | "seo" | "services" | "gallery";
 
-export default function Admin() {
+function LegacyAdmin({tab}:{tab:TabKey}) {
   const { user, loading: authLoading, logout } = useAuth();
   const [, navigate] = useLocation();
   const { toast } = useToast();
-  const [activeTab, setActiveTab] = useState<TabKey>("dyno");
+  const activeTab=tab;
 
   const [aiTopic, setAiTopic] = useState("");
   const [showAiForm, setShowAiForm] = useState(false);
@@ -116,67 +117,8 @@ export default function Admin() {
     return null;
   }
 
-  const tabs: { key: TabKey; label: string; icon: typeof BarChart3 }[] = [
-    ...(user.role === "root" || user.role === "admin" ? [{ key: "operations" as TabKey, label: "Operations & AI", icon: Sparkles }] : []),
-    { key: "dyno", label: "The Dyno", icon: Gauge },
-    { key: "dashboard", label: "Dashboard", icon: BarChart3 },
-    { key: "leads", label: "Leads", icon: Users },
-    { key: "blog", label: "Blog", icon: FileText },
-    { key: "newsletter", label: "Newsletter", icon: Mail },
-    ...(user.role === "root" || user.role === "admin" ? [{ key: "users" as TabKey, label: "Users", icon: Users }] : []),
-    ...(user.role === "root" || user.role === "admin" ? [{ key: "integrations" as TabKey, label: "Integrations", icon: Zap }] : []),
-    ...(user.role === "root" || user.role === "admin" ? [{ key: "seo" as TabKey, label: "SEO", icon: Target }] : []),
-    ...(user.role === "root" || user.role === "admin" ? [{ key: "services" as TabKey, label: "Services", icon: Sparkles }] : []),
-    ...(user.role === "root" || user.role === "admin" ? [{ key: "gallery" as TabKey, label: "Gallery", icon: Globe }] : []),
-  ];
-
-  return (
-    <div className="bg-[#0B0B0D] min-h-screen pt-24">
-      <div className="max-w-7xl mx-auto px-6 lg:px-10 pb-24">
-        <div className="flex flex-wrap items-center justify-between gap-4 mb-8">
-          <div>
-            <p className="text-xs uppercase tracking-[0.3em] text-[#5D3FD3] font-semibold mb-1">
-              Admin Panel
-            </p>
-            <h1 className="text-2xl font-bold text-[#F5F5F7] uppercase tracking-tight" data-testid="text-admin-headline">
-              Reign Services
-            </h1>
-          </div>
-          <div className="flex items-center gap-3">
-            <span className="text-xs text-[#B3B3B8]" data-testid="text-admin-user">{user.name}</span>
-            <Badge className="bg-[#5D3FD3]/20 text-[#5D3FD3] border-0 no-default-hover-elevate no-default-active-elevate text-xs">
-              {user.role}
-            </Badge>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={async () => { await logout(); navigate("/login"); }}
-              data-testid="button-logout"
-            >
-              <LogOut className="w-4 h-4 text-[#B3B3B8]" />
-            </Button>
-          </div>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2 mb-8 border-b border-white/5 pb-4">
-          {tabs.map((tab) => (
-            <Button
-              key={tab.key}
-              variant={activeTab === tab.key ? "default" : "ghost"}
-              className={activeTab === tab.key ? "bg-[#5D3FD3] text-white" : "text-[#B3B3B8]"}
-              onClick={() => setActiveTab(tab.key)}
-              data-testid={`tab-${tab.key}`}
-            >
-              <tab.icon className="w-4 h-4 mr-2" />
-              {tab.label}
-            </Button>
-          ))}
-        </div>
-
+  return <div className="legacy-panel">
         {activeTab === "operations" && (user.role === "root" || user.role === "admin") && <Suspense fallback={<p>Loading operations…</p>}><ReignOperations /></Suspense>}
-        {activeTab === "dyno" && <TheDyno />}
-        {activeTab === "dashboard" && <DashboardTab />}
-        {activeTab === "leads" && <LeadsTab toast={toast} />}
         {activeTab === "blog" && (
           <BlogTab
             toast={toast}
@@ -219,10 +161,10 @@ export default function Admin() {
         {activeTab === "gallery" && (user.role === "root" || user.role === "admin") && (
           <GalleryTab toast={toast} />
         )}
-      </div>
-    </div>
-  );
+  </div>;
 }
+
+export default function Admin(){return <ReignWorkspace renderLegacy={page=><LegacyAdmin tab={page as TabKey}/>}/>;}
 
 function DashboardTab() {
   const { data: stats, isLoading } = useQuery<{

@@ -7,6 +7,7 @@ import { authMiddleware, requireRole, hashPassword, verifyPassword, createSessio
 import crypto from "crypto";
 import { getInference as getOpenAI, freeModel, publicBaseUrl } from "./inference";
 import {registerSitePlans} from "./site-plans";
+import {registerCRM} from "./reign-crm";
 import { registerOperations } from "./reign-operations";
 import { registerAgents, limiter } from "./reign-agents";
 import { contextGraph } from "./reign-context";
@@ -136,6 +137,7 @@ export async function registerRoutes(
   });
 
   registerOperations(app);
+  registerCRM(app,fireWebhooks);
   registerSitePlans(app);
   registerAgents(app);
 
@@ -273,7 +275,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/leads", authMiddleware, requireRole("root", "admin"), async (_req, res) => {
+  app.get("/api/leads", authMiddleware, requireRole("root", "admin", "editor"), async (_req, res) => {
     try {
       const allLeads = await storage.getLeads();
       res.json(allLeads);

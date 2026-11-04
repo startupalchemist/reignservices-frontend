@@ -37,10 +37,10 @@ before(async()=>{
  assert.ok(admin);assert.ok(editor);
 });
 after(async()=>{await new Promise<void>(resolve=>server.close(()=>resolve()));await pool.end();});
-test("Staff operations reject anonymous and editor requests, including mutations",async()=>{
+test("Employee reads are allowed while CMS mutations retain administrator scope",async()=>{
  assert.equal((await call("/api/operations/context")).status,401);
  assert.equal((await call("/api/operations/actions",{type:"service.delete",id:serviceId},editor)).status,403);
- assert.equal((await call("/api/operations/proposals",undefined,editor)).status,403);
+ assert.equal((await call("/api/operations/proposals",undefined,editor)).status,200);
 });
 test("Blog lifecycle protects drafts by slug and numeric ID, allows staff preview and published reads",async()=>{
  const draft=await call("/api/posts",{title:"Draft hidden",content:"## Draft\nPrivate work",status:"draft"},admin);
@@ -117,7 +117,7 @@ test("Agent actions require the owning staff account, fresh context, and one-tim
  const id=crypto.randomUUID(),graph=await contextGraph(true);
  const action={type:"config.set",key:"reign_consultation_message",value:"Book a free consultation"};
  await pool.query("INSERT INTO reign_agent_actions(id,actor_id,action,context_version) VALUES($1,$2,$3,$4)",[id,adminId,JSON.stringify(action),graph.version]);
- assert.equal((await call("/api/operations/agent/actions/"+id+"/confirm",{},editor)).status,403);
+ assert.equal((await call("/api/operations/agent/actions/"+id+"/confirm",{},editor)).status,409);
  assert.equal((await call("/api/operations/agent/actions/"+id+"/confirm",{},admin)).status,200);
  assert.equal((await call("/api/operations/agent/actions/"+id+"/confirm",{},admin)).status,409);
  const stale=crypto.randomUUID();

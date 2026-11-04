@@ -10,7 +10,8 @@
     "check": "tsc",
     "db:push": "drizzle-kit push",
     "test": "tsx --test tests/domain.test.ts",
-    "test:integration": "tsx --test tests/integration.test.ts tests/site-integration.test.ts"
+    "test:integration": "tsx --test --test-concurrency=1 tests/integration.test.ts tests/site-integration.test.ts tests/crm.integration.test.ts",
+    "test:browser": "node tests/workspace.browser.cjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
@@ -87,6 +88,7 @@
     "zod-validation-error": "^3.5.4"
   },
   "devDependencies": {
+    "@playwright/test": "^1.56.1",
     "@replit/vite-plugin-cartographer": "^0.4.4",
     "@replit/vite-plugin-dev-banner": "^0.1.1",
     "@replit/vite-plugin-runtime-error-modal": "^0.0.3",

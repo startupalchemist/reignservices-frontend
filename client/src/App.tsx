@@ -1,4 +1,4 @@
-import { Switch, Route } from "wouter";
+import { Switch, Route, useLocation } from "wouter";
 import { lazy, Suspense } from "react";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
@@ -72,16 +72,17 @@ function Router() {
 }
 
 function App() {
+  const [location]=useLocation();
+  const workspace=location.startsWith("/admin")||location==="/login";
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
         <AuthProvider>
-          <div className="grain-overlay" />
-          <Header />
+          {!workspace&&<><div className="grain-overlay" /><Header /></>}
           <main>
             <Router />
           </main>
-          <Footer />
+          {!workspace&&<Footer />}
           <SalesAgent />
           <Toaster />
         </AuthProvider>

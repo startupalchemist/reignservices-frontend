@@ -5,7 +5,7 @@ import {readFile} from "node:fs/promises";
 import path from "node:path";
 import {pool} from "./db";
 import {storage} from "./storage";
-import {staff,handled,fail,audit,executeAction} from "./reign-operations";
+import {staff,employees,handled,fail,audit,executeAction} from "./reign-operations";
 import {requireRole} from "./auth";
 import {limiter} from "./reign-agents";
 import {getVisionInference,freeVisionModel} from "./inference";
@@ -42,7 +42,7 @@ async function loadPlan(value:unknown){
 }
 const publicPlan=(p:any)=>{const {image_data,...rest}=p;return rest;};
 export function registerSitePlans(app:Express,deps={locateAddress,fetchImagery,getVisionInference}){
- app.get("/api/operations/branding",...staff,handled(async(_req,res)=>{
+ app.get("/api/operations/branding",...employees,handled(async(_req,res)=>{
   const row=await ensureTenant();res.set("Cache-Control","private, no-store").json({brand:row.brand,platformLogo:row.platform_logo,subscription:{tier:row.tier,status:row.status,currentPeriodEnd:row.current_period_end},entitlements:rights(row)});
  }));
  app.patch("/api/operations/branding",...staff,handled(async(req,res)=>{
@@ -50,20 +50,20 @@ export function registerSitePlans(app:Express,deps={locateAddress,fetchImagery,g
   await pool.query("UPDATE reign_tenant_entitlements SET brand=$1,updated_at=now() WHERE tenant_id=$2",[JSON.stringify(brand),tenantId()]);
   await audit(req.user!.id,"branding.update",tenantId(),{name:brand.name,hasLogo:!!brand.logo});res.json({brand});
  }));
- app.patch("/api/operations/branding/subscription",...staff,requireRole("root"),handled(async(req,res)=>{
+ app.patch("/api/operations/branding/subscription",...employees,requireRole("root"),handled(async(req,res)=>{
   const s=subscriptionSchema.parse(req.body);await ensureTenant();
   await pool.query("UPDATE reign_tenant_entitlements SET tier=$1,status=$2,current_period_end=$3,updated_at=now() WHERE tenant_id=$4",[s.tier,s.status,s.currentPeriodEnd,tenantId()]);
   await audit(req.user!.id,"subscription.entitlement",tenantId(),s);res.json({entitlements:entitlements(s)});
  }));
- app.patch("/api/operations/branding/platform-logo",...staff,requireRole("root"),handled(async(req,res)=>{
+ app.patch("/api/operations/branding/platform-logo",...employees,requireRole("root"),handled(async(req,res)=>{
   const input=z.object({logo:pngLogo.nullable()}).strict().parse(req.body);const logo=await normalizedLogo(input.logo);await ensureTenant();
   await pool.query("UPDATE reign_tenant_entitlements SET platform_logo=$1,updated_at=now() WHERE tenant_id=$2",[logo,tenantId()]);
   await audit(req.user!.id,"branding.platform_logo",tenantId(),{hasLogo:!!logo});res.json({saved:true});
  }));
- app.get("/api/operations/site-plans",...staff,handled(async(_req,res)=>{
+ app.get("/api/operations/site-plans",...employees,handled(async(_req,res)=>{
   res.set("Cache-Control","private, no-store").json((await pool.query("SELECT id,lead_id,document,version,reviewed_at,created_at FROM reign_site_plans WHERE tenant_id=$1 ORDER BY id DESC LIMIT 50",[tenantId()])).rows);
  }));
- app.post("/api/operations/site-plans",...staff,limiter(5,60000),handled(async(req,res)=>{
+ app.post("/api/operations/site-plans",...employees,limiter(5,60000),handled(async(req,res)=>{
   await permitted();
   const input=z.object({leadId:id,address:z.string().trim().min(6).max(200),lat:z.number().min(24).max(50).optional(),lng:z.number().min(-125).max(-66).optional(),zoom:z.number().int().min(17).max(20).default(19)}).strict().refine(x=>(x.lat===undefined)===(x.lng===undefined),"Supply both coordinates").parse(req.body);
   if(!await storage.getLead(input.leadId))fail("Customer lead not found",404);
@@ -80,10 +80,10 @@ export function registerSitePlans(app:Express,deps={locateAddress,fetchImagery,g
   await pool.query("DELETE FROM reign_site_plans WHERE id=$1 AND tenant_id=$2",[p.id,tenantId()]);
   await audit(req.user!.id,"siteplan.delete",String(p.id));res.json({deleted:true});
  }));
- app.get("/api/operations/site-plans/:id/image",...staff,handled(async(req,res)=>{
+ app.get("/api/operations/site-plans/:id/image",...employees,handled(async(req,res)=>{
   const p=await loadPlan(req.params.id);res.set("Cache-Control","private, no-store").type("jpeg").send(Buffer.from(p.image_data.split(",")[1],"base64"));
  }));
- app.post("/api/operations/site-plans/:id/analyze",...staff,limiter(3,60000),handled(async(req,res)=>{
+ app.post("/api/operations/site-plans/:id/analyze",...employees,limiter(3,60000),handled(async(req,res)=>{
   await permitted();const p=await loadPlan(req.params.id);
   const {version}=z.object({version:id}).strict().parse(req.body);if(p.version!==version)fail("Site plan changed. Reload before analyzing.",409);
   let result;try{result=await deps.getVisionInference().chat.completions.create({
@@ -97,19 +97,19 @@ export function registerSitePlans(app:Express,deps={locateAddress,fetchImagery,g
   if(!updated)fail("Site plan changed during analysis. Reload before trying again.",409);
   await audit(req.user!.id,"siteplan.ai_markup",String(p.id),{shapeCount:annotations.shapes.length});res.json(publicPlan(updated));
  }));
- app.patch("/api/operations/site-plans/:id",...staff,handled(async(req,res)=>{
+ app.patch("/api/operations/site-plans/:id",...employees,handled(async(req,res)=>{
   const {version,annotations}=z.object({version:id,annotations:annotationsSchema}).strict().parse(req.body),p=await loadPlan(req.params.id);
   const measured=measuredShapes(annotations,p.document.feetPerPixel);
   const updated=(await pool.query("UPDATE reign_site_plans SET document=$1,version=version+1,reviewed_at=NULL WHERE id=$2 AND tenant_id=$3 AND version=$4 RETURNING *",[JSON.stringify({...p.document,annotations:measured}),p.id,tenantId(),version])).rows[0];
   if(!updated)fail("Site plan changed. Reload before saving.",409);await audit(req.user!.id,"siteplan.annotate",String(p.id),{shapeCount:measured.shapes.length});res.json(publicPlan(updated));
  }));
- app.post("/api/operations/site-plans/:id/review",...staff,handled(async(req,res)=>{
+ app.post("/api/operations/site-plans/:id/review",...employees,handled(async(req,res)=>{
   const {version}=z.object({version:id}).strict().parse(req.body),p=await loadPlan(req.params.id);
   if(!p.document.annotations.shapes.length)fail("Add a boundary before marking this plan reviewed.");
   const updated=(await pool.query("UPDATE reign_site_plans SET reviewed_at=now(),version=version+1 WHERE id=$1 AND tenant_id=$2 AND version=$3 RETURNING *",[p.id,tenantId(),version])).rows[0];
   if(!updated)fail("Site plan changed. Reload before reviewing.",409);await audit(req.user!.id,"siteplan.review",String(p.id));res.json(publicPlan(updated));
  }));
- app.get("/api/operations/site-plans/:id/export",...staff,limiter(10,60000),handled(async(req,res)=>{
+ app.get("/api/operations/site-plans/:id/export",...employees,limiter(10,60000),handled(async(req,res)=>{
   const mode=z.enum(brandingModes).parse(req.query.mode||"platform"),format=z.enum(["png","svg"]).parse(req.query.format||"png");
   const {row}=await permitted(mode),p=await loadPlan(req.params.id);
   const svg=renderSitePlan(p,row.brand,row.platform_logo,mode);
@@ -117,7 +117,7 @@ export function registerSitePlans(app:Express,deps={locateAddress,fetchImagery,g
   await permitted(mode);await audit(req.user!.id,"siteplan.export",String(p.id),{mode,format,version:p.version});
   res.set({"Cache-Control":"private, no-store","Content-Disposition":'attachment; filename="site-plan-'+p.id+'-'+mode+'.'+format+'"',"X-Content-Type-Options":"nosniff"}).type(format==="png"?"png":"image/svg+xml").send(result);
  }));
- app.post("/api/operations/site-plans/:id/measurements",...staff,handled(async(req,res)=>{
+ app.post("/api/operations/site-plans/:id/measurements",...employees,handled(async(req,res)=>{
   const {version,shapeIndex}=z.object({version:id,shapeIndex:z.number().int().min(0).max(7)}).strict().parse(req.body),p=await loadPlan(req.params.id);
   if(p.version!==version||!p.reviewed_at)fail("Review the current site plan before transferring a boundary.",409);
   const shape=measuredShapes(p.document.annotations,p.document.feetPerPixel).shapes[shapeIndex];if(!shape)fail("Boundary not found",404);

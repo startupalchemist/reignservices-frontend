@@ -28,6 +28,24 @@ export const actionSchema=z.discriminatedUnion("type",[
   z.object({type:z.literal("proposal.update"),id:idSchema,version:idSchema,data:proposalInput}).strict(),
 ]);
 export const staff=[authMiddleware,requireRole("root","admin")];
+export const employees=[authMiddleware,requireRole("root","admin","editor")];
+export async function authorizeAction(actor:number,action:{type:string}) {
+ const user=(await pool.query("SELECT role FROM users WHERE id=$1",[actor])).rows[0];
+ if(!user || (!['root','admin'].includes(user.role) && !(user.role==='editor'&&['proposal.create','proposal.update','measurement.create'].includes(action.type)))) fail("This action requires an administrator",403);
+}
+export async function createPortalAccess(actor:number,leadId:number) {
+ if(!await storage.getLead(leadId)) fail("Lead not found",404);
+ const token=crypto.randomBytes(32).toString("hex");
+ const client=await pool.connect();
+ try{
+  await client.query("BEGIN");
+  await client.query("DELETE FROM reign_portal_access WHERE lead_id=$1",[leadId]);
+  await client.query("INSERT INTO reign_portal_access(lead_id,token_hash,expires_at,created_by) VALUES($1,$2,now()+interval '30 days',$3)",[leadId,digest(token),actor]);
+  await client.query("COMMIT");
+ }catch(e){await client.query("ROLLBACK");throw e;}finally{client.release();}
+ await audit(actor,"portal.invite",String(leadId));
+ return {url:publicBaseUrl()+"/portal#"+token,expiresInDays:30};
+}
 export function handled(fn:(req:Request,res:Response)=>Promise<unknown>) {
   return (req:Request,res:Response,next:NextFunction)=>{Promise.resolve(fn(req,res)).catch(error=>{
     if(error instanceof z.ZodError) return res.status(400).json({message:"Invalid input",issues:error.issues});
@@ -54,6 +72,7 @@ async function proposalDocument(data:z.infer<typeof proposalInput>) {
 }
 export async function executeAction(actor:number,raw:unknown) {
   const action=actionSchema.parse(raw);
+  await authorizeAction(actor,action);
   if(action.type==="service.create") {
     if((await storage.getServices()).some(s=>s.slug===action.data.slug)) fail("Service slug already exists",409);
     return storage.createService({...action.data,badge:action.data.badge||"",header:action.data.header||"",description:action.data.description||"",isActive:action.data.isActive??true});
@@ -90,9 +109,9 @@ export async function executeAction(actor:number,raw:unknown) {
   return result.rows[0];
 }
 export function registerOperations(app:Express) {
-  app.get("/api/operations/context",...staff,handled(async(_req,res)=>res.json(await contextGraph(true))));
-  app.get("/api/operations/proposals",...staff,handled(async(_req,res)=>res.json((await pool.query("SELECT * FROM reign_proposals ORDER BY id DESC LIMIT 200")).rows)));
-  app.post("/api/operations/actions",...staff,handled(async(req,res)=>{
+  app.get("/api/operations/context",...employees,handled(async(_req,res)=>res.json(await contextGraph(true))));
+  app.get("/api/operations/proposals",...employees,handled(async(_req,res)=>res.json((await pool.query("SELECT * FROM reign_proposals ORDER BY id DESC LIMIT 200")).rows)));
+  app.post("/api/operations/actions",...employees,handled(async(req,res)=>{
     const action=actionSchema.parse(req.body);
     const result=await executeAction(req.user!.id,action);
     await audit(req.user!.id,action.type,"operations",{action,result});
@@ -108,29 +127,19 @@ export function registerOperations(app:Express) {
     await audit(req.user!.id,"proposal."+transition,String(id));
     res.json(result.rows[0]);
   }));
-  app.get("/api/operations/measurements",...staff,handled(async(_req,res)=>res.json((await pool.query("SELECT * FROM reign_measurements ORDER BY id DESC LIMIT 200")).rows)));
-  app.post("/api/operations/measurements",...staff,handled(async(req,res)=>{
+  app.get("/api/operations/measurements",...employees,handled(async(_req,res)=>res.json((await pool.query("SELECT * FROM reign_measurements ORDER BY id DESC LIMIT 200")).rows)));
+  app.post("/api/operations/measurements",...employees,handled(async(req,res)=>{
     const saved=await executeAction(req.user!.id,{type:"measurement.create",data:req.body});
     await audit(req.user!.id,"measurement.create",String(saved.id));res.status(201).json(saved);
   }));
-  app.post("/api/operations/measurements/:id/verify",...staff,handled(async(req,res)=>{
+  app.post("/api/operations/measurements/:id/verify",...employees,handled(async(req,res)=>{
     const result=await pool.query("UPDATE reign_measurements SET verified=true WHERE id=$1 RETURNING *",[idSchema.parse(req.params.id)]);
     if(!result.rowCount) fail("Measurement not found",404);
     await audit(req.user!.id,"measurement.verify",String(req.params.id));res.json(result.rows[0]);
   }));
-  app.post("/api/operations/portal-access",...staff,handled(async(req,res)=>{
+  app.post("/api/operations/portal-access",...employees,handled(async(req,res)=>{
     const leadId=idSchema.parse(req.body.leadId);
-    if(!await storage.getLead(leadId)) fail("Lead not found",404);
-    const token=crypto.randomBytes(32).toString("hex");
-    const client=await pool.connect();
-    try{
-      await client.query("BEGIN");
-      await client.query("DELETE FROM reign_portal_access WHERE lead_id=$1",[leadId]);
-      await client.query("INSERT INTO reign_portal_access(lead_id,token_hash,expires_at,created_by) VALUES($1,$2,now()+interval '30 days',$3)",[leadId,digest(token),req.user!.id]);
-      await client.query("COMMIT");
-    }catch(e){await client.query("ROLLBACK");throw e;}finally{client.release();}
-    await audit(req.user!.id,"portal.invite",String(leadId));
-    res.status(201).json({url:publicBaseUrl()+"/portal#"+token,expiresInDays:30});
+    res.status(201).json(await createPortalAccess(req.user!.id,leadId));
   }));
   app.delete("/api/operations/portal-access/:leadId",...staff,handled(async(req,res)=>{
     const leadId=idSchema.parse(req.params.leadId);
