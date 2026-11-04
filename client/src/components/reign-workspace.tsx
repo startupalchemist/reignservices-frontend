@@ -130,7 +130,7 @@ const palette = [
   "#c8cdd5",
 ];
 function useRows(path: string) {
-  return useQuery<any>({ queryKey: [path], refetchOnWindowFocus: true });
+  return useQuery<any>({ queryKey: [path], staleTime: 15000, refetchInterval: 60000, refetchOnWindowFocus: true });
 }
 const Workspace = createContext<any>(null);
 const useWork = () => useContext(Workspace);
