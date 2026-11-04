@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, timestamp, serial, boolean, integer } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, serial, boolean, integer, jsonb, numeric, bigserial, date } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -345,4 +345,58 @@ export const messages = pgTable("messages", {
   role: text("role").notNull(),
   content: text("content").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// Operations tables mirror the versioned SQL migration. Do not run db:push in production.
+export const reignMeasurements = pgTable("reign_measurements", {
+  id: serial("id").primaryKey(),
+  leadId: integer("lead_id").notNull().references(() => leads.id),
+  label: text("label").notNull(), points: jsonb("points").notNull(), source: text("source").notNull(),
+  areaSqFt: numeric("area_sq_ft").notNull(), perimeterFt: numeric("perimeter_ft").notNull(),
+  verified: boolean("verified").notNull().default(false),
+  createdBy: integer("created_by").notNull().references(() => users.id),
+  createdAt: timestamp("created_at", {withTimezone:true}).notNull().defaultNow(),
+});
+export const reignProposals = pgTable("reign_proposals", {
+  id: serial("id").primaryKey(), leadId: integer("lead_id").notNull().references(() => leads.id),
+  document: jsonb("document").notNull(), status: text("status").notNull().default("draft"),
+  version: integer("version").notNull().default(1),
+  createdBy: integer("created_by").notNull().references(() => users.id),
+  createdAt: timestamp("created_at",{withTimezone:true}).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at",{withTimezone:true}).notNull().defaultNow(),
+  decidedAt: timestamp("decided_at",{withTimezone:true}), decidedBy: text("decided_by"),
+});
+export const reignPortalAccess = pgTable("reign_portal_access", {
+  id: serial("id").primaryKey(),leadId:integer("lead_id").notNull().unique().references(()=>leads.id),
+  tokenHash:text("token_hash").notNull().unique(),expiresAt:timestamp("expires_at",{withTimezone:true}).notNull(),
+  createdBy:integer("created_by").notNull().references(()=>users.id),
+  createdAt:timestamp("created_at",{withTimezone:true}).notNull().defaultNow(),
+});
+export const reignAudit = pgTable("reign_audit", {
+  id:bigserial("id",{mode:"number"}).primaryKey(),actorId:integer("actor_id").references(()=>users.id),
+  action:text("action").notNull(),resource:text("resource").notNull(),detail:jsonb("detail").notNull().default({}),
+  createdAt:timestamp("created_at",{withTimezone:true}).notNull().defaultNow(),
+});
+export const reignAgentActions = pgTable("reign_agent_actions",{
+  id:text("id").primaryKey(),actorId:integer("actor_id").notNull().references(()=>users.id),
+  action:jsonb("action").notNull(),contextVersion:text("context_version").notNull(),
+  expiresAt:timestamp("expires_at",{withTimezone:true}).notNull().default(sql`now()+interval '10 minutes'`),
+  completedAt:timestamp("completed_at",{withTimezone:true}),
+  createdAt:timestamp("created_at",{withTimezone:true}).notNull().defaultNow(),
+});
+export const reignAiBudget = pgTable("reign_ai_budget",{
+  day:date("day").primaryKey(),requests:integer("requests").notNull().default(0),
+});
+
+export const reignTenantEntitlements=pgTable("reign_tenant_entitlements",{
+ tenantId:text("tenant_id").primaryKey(),tier:text("tier").notNull().default("starter"),
+ status:text("status").notNull().default("active"),currentPeriodEnd:timestamp("current_period_end",{withTimezone:true}),
+ brand:jsonb("brand").notNull().default(sql`'{"name":"Reign Services","logo":null}'::jsonb`),
+ platformLogo:text("platform_logo"),updatedAt:timestamp("updated_at",{withTimezone:true}).notNull().defaultNow(),
+});
+export const reignSitePlans=pgTable("reign_site_plans",{
+ id:serial("id").primaryKey(),tenantId:text("tenant_id").notNull(),
+ leadId:integer("lead_id").notNull().references(()=>leads.id),document:jsonb("document").notNull(),
+ imageData:text("image_data").notNull(),version:integer("version").notNull().default(1),
+ reviewedAt:timestamp("reviewed_at",{withTimezone:true}),createdAt:timestamp("created_at",{withTimezone:true}).notNull().defaultNow(),
 });

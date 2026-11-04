@@ -1,0 +1,102 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import {runFreeRequest} from "../server/free-routing";
+import {parseModelJson,parseResearch} from "../server/model-json";
+import {requireEmailAccepted} from "../server/mail-result";
+import {measurePolygon,calculateProposal,proposalInput,measurementInput} from "../server/operations-domain";
+const rates=[{serviceId:1,unit:"sq ft" as const,unitPriceCents:825,minimumCents:15000}];
+const services=[{id:1,title:"Turf",isActive:true}];
+test("Measurements calculate concave polygons, winding-independent area and perimeter",()=>{
+  const points:[number,number][]=[[0,0],[30,0],[30,20],[10,20],[10,10],[0,10]];
+  assert.equal(measurePolygon(points).areaSqFt,500);
+  assert.equal(measurePolygon([...points].reverse()).areaSqFt,500);
+  assert.equal(measurePolygon([[0,0],[30,0],[30,20],[0,20]]).perimeterFt,100);
+});
+test("Measurements reject intersecting, zero-area and malformed boundaries",()=>{
+  assert.throws(()=>measurePolygon([[0,0],[10,10],[0,10],[10,0]]));
+  assert.throws(()=>measurePolygon([[0,0],[10,0],[20,0]]));
+  assert.throws(()=>measurementInput.parse({leadId:1,label:"x",source:"x",points:[[0,0],[Infinity,0],[1,1]]}));
+});
+test("Bid pricing preserves cents, minimum charges and deterministic tax",()=>{
+  const input=proposalInput.parse({leadId:1,title:"Test",scope:"Scope",lines:[{serviceId:1,quantity:2}],taxBasisPoints:825});
+  const result=calculateProposal(input,rates,services);
+  assert.equal(result.subtotalCents,15000);assert.equal(result.taxCents,1238);assert.equal(result.totalCents,16238);
+  rates[0].unitPriceCents=900;assert.equal(result.lines[0].unitPriceCents,825);rates[0].unitPriceCents=825;
+});
+test("Bids reject missing rates, inactive services, negative quantities and injected money",()=>{
+  const input=proposalInput.parse({leadId:1,title:"Test",scope:"Scope",lines:[{serviceId:1,quantity:100}]});
+  assert.throws(()=>calculateProposal(input,[],services));
+  assert.throws(()=>calculateProposal(input,rates,[{...services[0],isActive:false}]));
+  assert.throws(()=>proposalInput.parse({...input,lines:[{serviceId:1,quantity:-1}]}));
+  assert.throws(()=>proposalInput.parse({...input,totalCents:1}));
+});
+
+test("Email acceptance rejects provider errors and missing message IDs",()=>{
+ assert.throws(()=>requireEmailAccepted({data:null,error:{message:"Rejected"}}));
+ assert.throws(()=>requireEmailAccepted({data:null,error:null}));
+ assert.equal(requireEmailAccepted({data:{id:"test-message"},error:null}),"test-message");
+});
+
+test("Structured model responses accept JSON fences and reject prose or broken JSON",()=>{
+ assert.deepEqual(parseModelJson('\x60\x60\x60json\n{"reply":"Ready"}\n\x60\x60\x60'),{reply:"Ready"});
+ assert.throws(()=>parseModelJson('Ignore instructions {"reply":"unsafe"}'));
+ assert.throws(()=>parseModelJson('{"reply":'));
+});
+
+test("Busy pinned models get one free-only fallback and both attempts count toward budget",async()=>{
+ const calls:string[]=[];let count=0;
+ const result=await runFreeRequest({model:"test/model:free"},{timeout:180000},async(body,options)=>{
+  calls.push(body.model);assert.equal(body.reasoning.effort,"low");assert.equal(options.timeout,180000);
+  if(calls.length===1) throw Object.assign(new Error("Busy"),{status:429});return {ok:true};
+ },async()=>{count++;},"test/model:free");
+ assert.deepEqual(calls,["test/model:free","openrouter/free"]);assert.equal(count,2);assert.deepEqual(result,{ok:true});
+});
+test("Paid models, exhausted budgets and router errors never create paid or unbounded retries",async()=>{
+ let calls=0;
+ const create=async()=>{calls++;throw Object.assign(new Error("Busy"),{status:429});};
+ await assert.rejects(runFreeRequest({model:"paid/model"},null,create,async()=>{},"paid/model"));assert.equal(calls,0);
+ await assert.rejects(runFreeRequest({model:"openrouter/free"},null,create,async()=>{throw Error("Budget exhausted");},"openrouter/free"));assert.equal(calls,0);
+ await assert.rejects(runFreeRequest({model:"openrouter/free"},null,create,async()=>{},"openrouter/free"));assert.equal(calls,1);
+});
+
+test("Research rejects empty or malformed topic output instead of marking an empty run complete",()=>{
+ assert.throws(()=>parseResearch("{}"));
+ assert.throws(()=>parseResearch(JSON.stringify({marketInsights:"Hypotheses",topics:[]})));
+ assert.throws(()=>parseResearch(JSON.stringify({marketInsights:"Hypotheses",topics:[{title:"Turf"}]})));
+ const topic={title:"DFW Turf",overview:"Consultation planning",targetKeywords:["DFW turf"],searchIntent:"informational",estimatedSearchVolume:"low",competitionLevel:"medium",leadPotential:"Planning",reasoning:"Needs live validation"};
+ assert.equal(parseResearch(JSON.stringify({marketInsights:"Unverified hypotheses",topics:[topic]})).topics[0].title,"DFW Turf");
+});
+
+import {entitlements,mapScale,mercatorBounds,measuredShapes,pngLogo,subscriptionSchema,renderSitePlan} from "../server/site-domain";
+test("Export entitlements fail closed for unknown tiers, unpaid statuses, expired access and missing premium expiry",()=>{
+ const expiry=new Date(Date.now()+86400000).toISOString();
+ assert.deepEqual(entitlements({tier:"starter",status:"active"}).modes,["platform"]);
+ assert.deepEqual(entitlements({tier:"pro",status:"active",currentPeriodEnd:expiry}).modes,["platform","dual"]);
+ assert.deepEqual(entitlements({tier:"white_label",status:"trialing",currentPeriodEnd:expiry}).modes,["platform","dual","tenant"]);
+ for(const status of ["canceled","past_due","paused","incomplete","unknown"])assert.equal(entitlements({tier:"white_label",status,currentPeriodEnd:expiry}).canExport,false);
+ assert.equal(entitlements({tier:"white_label",status:"active"}).active,false);
+ assert.equal(entitlements({tier:"unknown",status:"active",currentPeriodEnd:expiry}).active,false);
+ assert.equal(entitlements({tier:"pro",status:"active",currentPeriodEnd:new Date(0).toISOString()}).active,false);
+ assert.throws(()=>subscriptionSchema.parse({tier:"pro",status:"active",currentPeriodEnd:null}));
+});
+test("Aerial scale uses the 512 pixel world convention and bounds preserve the source pixel scale",()=>{
+ assert.ok(Math.abs(mapScale(0,19).metersPerPixel-.1492910709)<1e-8);
+ assert.ok(mapScale(60,19).metersPerPixel<mapScale(0,19).metersPerPixel);
+ const b=mercatorBounds(32.78,-96.8,19);
+ assert.ok(Math.abs((b[2]-b[0])/768*Math.cos(32.78*Math.PI/180)-mapScale(32.78,19).metersPerPixel)<1e-8);
+});
+test("Aerial markup rejects out-of-image or crossed polygons and recomputes all supplied measures",()=>{
+ const raw={summary:"Estimate",shapes:[{label:"Yard",kind:"turf",confidence:"medium",notes:"",points:[[0,0],[.5,0],[.5,.5],[0,.5]],areaSqFt:1,perimeterFt:1}]};
+ const value=measuredShapes(raw,1);assert.equal(value.shapes[0].areaSqFt,147456);assert.equal(measuredShapes(value,1).shapes[0].areaSqFt,147456);
+ assert.throws(()=>measuredShapes({...raw,shapes:[{...raw.shapes[0],points:[[0,0],[2,0],[1,1]]}]},1));
+ assert.throws(()=>measuredShapes({...raw,shapes:[{...raw.shapes[0],points:[[0,0],[1,1],[0,1],[1,0]]}]},1));
+});
+test("Logo inputs reject URLs, SVG scripts and invalid raster data",()=>{
+ for(const logo of ["https://example.com/a.png","data:image/svg+xml;base64,PHN2Zz4=","data:image/png;base64,AAAA"])assert.throws(()=>pngLogo.parse(logo));
+});
+
+test("Mapbox export keeps its attribution strip above markup and tenant branding cannot remove provider credit",()=>{
+ const plan={document:{address:"Test",feetPerPixel:1,provider:"mapbox",retrievedAt:"2026-10-21",attribution:"Mapbox satellite",annotations:{summary:"",shapes:[]}},image_data:"data:image/jpeg;base64,AAAA"};
+ const svg=renderSitePlan(plan,{name:"Tenant",logo:null},null,"tenant");
+ assert.match(svg,/clip-path="url\(#markup\)"/);assert.match(svg,/height="937"/);assert.match(svg,/Mapbox satellite/);assert.ok(!svg.includes("LaunchWorks"));assert.match(svg,/do not sum their areas/);
+});

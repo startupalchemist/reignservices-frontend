@@ -1,0 +1,23 @@
+# Starlight ingress; add to the existing Caddy configuration.
+reign.209-74-71-35.sslip.io {
+ encode zstd gzip
+ request_body {
+  max_size 64KB
+ }
+ header X-Robots-Tag "noindex, nofollow"
+ header X-Content-Type-Options nosniff
+ header Referrer-Policy strict-origin-when-cross-origin
+ reverse_proxy 127.0.0.1:5401
+}
+getreignservices.com {
+ encode zstd gzip
+ request_body {
+  max_size 64KB
+ }
+ header X-Content-Type-Options nosniff
+ header Referrer-Policy strict-origin-when-cross-origin
+ reverse_proxy 127.0.0.1:5401
+}
+www.getreignservices.com {
+ redir https://getreignservices.com{uri} permanent
+}

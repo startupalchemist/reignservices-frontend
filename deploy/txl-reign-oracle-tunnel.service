@@ -1,0 +1,10 @@
+[Unit]
+Description=Reign Oracle preview tunnel
+After=network-online.target
+Wants=network-online.target
+[Service]
+ExecStart=/usr/bin/ssh -N -T -i /opt/txl/secrets/oci/txl-oci-app01 -o BatchMode=yes -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -L 127.0.0.1:5401:127.0.0.1:5000 ubuntu@129.153.109.242
+Restart=always
+RestartSec=5
+[Install]
+WantedBy=multi-user.target

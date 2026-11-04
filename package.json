@@ -8,7 +8,10 @@
     "build": "tsx script/build.ts",
     "start": "NODE_ENV=production node dist/index.cjs",
     "check": "tsc",
-    "db:push": "drizzle-kit push"
+    "db:push": "drizzle-kit push",
+    "test": "tsx --test tests/domain.test.ts",
+    "test:integration": "tsx --test --test-concurrency=1 tests/integration.test.ts tests/site-integration.test.ts tests/crm.integration.test.ts",
+    "test:browser": "node tests/workspace.browser.cjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
@@ -74,6 +77,7 @@
     "react-resizable-panels": "^2.1.7",
     "recharts": "^2.15.2",
     "resend": "^4.0.0",
+    "sharp": "^0.35.5",
     "tailwind-merge": "^2.6.0",
     "tailwindcss-animate": "^1.0.7",
     "tw-animate-css": "^1.2.5",
@@ -84,6 +88,7 @@
     "zod-validation-error": "^3.5.4"
   },
   "devDependencies": {
+    "@playwright/test": "^1.56.1",
     "@replit/vite-plugin-cartographer": "^0.4.4",
     "@replit/vite-plugin-dev-banner": "^0.1.1",
     "@replit/vite-plugin-runtime-error-modal": "^0.0.3",

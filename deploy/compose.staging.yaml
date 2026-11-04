@@ -1,0 +1,45 @@
+name: txl-reign-staging
+services:
+  postgres:
+    image: postgres:17
+    restart: unless-stopped
+    env_file: /etc/txl/apps/reign-staging-postgres.env
+    volumes: [staging-data:/var/lib/postgresql/data]
+    networks: [data]
+    mem_limit: 256m
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U postgres -d reign_staging']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  app:
+    image: ${REIGN_IMAGE:?Set the tested image tag}
+    restart: unless-stopped
+    env_file: /etc/txl/apps/reign-staging.env
+    ports: ['127.0.0.1:5001:5000']
+    networks: [data,egress]
+    depends_on:
+      postgres: {condition: service_healthy}
+    mem_limit: 512m
+    read_only: true
+    tmpfs: ['/tmp:size=32m,noexec,nosuid']
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:5000/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+  migrate:
+    image: ${REIGN_IMAGE:?Set the tested image tag}
+    profiles: [tools]
+    env_file: /etc/txl/apps/reign-staging.env
+    command: [node,script/migrate.cjs]
+    networks: [data]
+    depends_on:
+      postgres: {condition: service_healthy}
+volumes:
+  staging-data:
+networks:
+  data: {internal: true}
+  egress:

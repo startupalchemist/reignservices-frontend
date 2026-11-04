@@ -39,7 +39,8 @@ function renderMarkdown(content: string): string {
     .replace(/\[([^\]]+)\]\s*\(([^)]+)\)/g, (_match, text, href) => {
       const placeholder = `%%LINK_${idx++}%%`;
       const safeText = escapeHtml(text.trim());
-      const safeHref = escapeHtml(href.trim());
+      const candidate=href.trim();
+      const safeHref = escapeHtml(/^(https?:\/\/|\/(?!\/)|mailto:)/i.test(candidate) ? candidate : "#");
       linkPlaceholders.push({
         placeholder,
         html: `<a href="${safeHref}" class="text-[#5D3FD3] hover:text-[#7a5ce8] underline underline-offset-2 transition-colors">${safeText}</a>`
