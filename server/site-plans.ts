@@ -42,6 +42,10 @@ async function loadPlan(value:unknown){
 }
 const publicPlan=(p:any)=>{const {image_data,...rest}=p;return rest;};
 export function registerSitePlans(app:Express,deps={locateAddress,fetchImagery,getVisionInference}){
+ app.get("/api/public/tenant-branding",handled(async(_req,res)=>{
+  const row=await ensureTenant(),brand=tenantBrandSchema.parse(row.brand);
+  res.set("Cache-Control","private, max-age=300").json({brand:{name:brand.name,logo:brand.logo}});
+ }));
  app.get("/api/operations/branding",...employees,handled(async(_req,res)=>{
   const row=await ensureTenant();res.set("Cache-Control","private, no-store").json({brand:row.brand,platformLogo:row.platform_logo,subscription:{tier:row.tier,status:row.status,currentPeriodEnd:row.current_period_end},entitlements:rights(row)});
  }));
