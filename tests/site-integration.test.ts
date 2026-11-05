@@ -38,6 +38,13 @@ before(async()=>{
  root=(await login("root")).cookie;admin=(await login("admin")).cookie;editor=(await login("editor")).cookie;assert.ok(root&&admin&&editor);
 });
 after(async()=>{await new Promise<void>(r=>server.close(()=>r()));await pool.end();});
+test("Login branding is public and returns only tenant display fields",async()=>{
+ const response=await call("/api/public/tenant-branding",undefined,"");
+ assert.equal(response.status,200);assert.equal(response.data.brand.name,"Reign Services");
+ assert.deepEqual(Object.keys(response.data).sort(),["brand"]);
+ assert.deepEqual(Object.keys(response.data.brand).sort(),["logo","name"]);
+ assert.equal(response.data.brand.logo===null||response.data.brand.logo.startsWith("data:image/png;base64,"),true);
+});
 test("Imagery and branding require staff, tenant IDs cannot be supplied, tenant admins cannot upgrade subscriptions",async()=>{
  assert.equal((await call("/api/operations/site-plans",undefined,"")).status,401);
  assert.equal((await call("/api/operations/branding",undefined,editor)).status,200);
